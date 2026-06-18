@@ -7,6 +7,18 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Node, mergeAttributes } from "@tiptap/core";
 import { useRef, useCallback } from "react";
+import {
+  Heading1,
+  Heading2,
+  Bold,
+  Italic,
+  Strikethrough,
+  Link2,
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Code,
+  Quote
+} from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Custom VideoBlock Tiptap node — renders as <video controls>
@@ -48,7 +60,7 @@ async function uploadMedia(file: File): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Toolbar
+// Toolbar Button
 // ---------------------------------------------------------------------------
 function ToolbarButton({
   active,
@@ -66,11 +78,12 @@ function ToolbarButton({
       type="button"
       onClick={onClick}
       title={title}
-      className="px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors"
+      className="p-2 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 flex items-center justify-center cursor-pointer"
       style={{
-        background: active ? "rgba(155,134,255,0.18)" : "transparent",
+        background: active ? "rgba(155,134,255,0.14)" : "transparent",
         color: active ? "var(--c-violet)" : "var(--c-muted)",
-        border: active ? "1px solid rgba(155,134,255,0.3)" : "1px solid transparent",
+        border: active ? "1px solid rgba(155,134,255,0.22)" : "1px solid transparent",
+        boxShadow: active ? "0 0 10px rgba(155, 134, 255, 0.08)" : "none",
       }}
     >
       {children}
@@ -81,7 +94,7 @@ function ToolbarButton({
 function Divider() {
   return (
     <span
-      className="inline-block w-px h-5 mx-0.5 self-center"
+      className="inline-block w-px h-4 mx-1.5 self-center"
       style={{ background: "var(--c-border)" }}
     />
   );
@@ -118,28 +131,41 @@ function Toolbar({ editor }: { editor: Editor }) {
 
   return (
     <div
-      className="flex flex-wrap items-center gap-0.5 p-2 rounded-t-xl border-b"
+      className="flex flex-wrap items-center gap-1 p-2 rounded-t-xl border-b"
       style={{
-        background: "var(--c-surface)",
-        border: "1px solid var(--c-border)",
+        background: "var(--c-surface-hi)",
         borderBottom: "1px solid var(--c-border-soft)",
       }}
     >
-      <ToolbarButton active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="Heading 1">H1</ToolbarButton>
-      <ToolbarButton active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading 2">H2</ToolbarButton>
+      <ToolbarButton active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} title="Heading 1">
+        <Heading1 size={17} />
+      </ToolbarButton>
+      <ToolbarButton active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="Heading 2">
+        <Heading2 size={17} />
+      </ToolbarButton>
 
       <Divider />
 
-      <ToolbarButton active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold"><strong>B</strong></ToolbarButton>
-      <ToolbarButton active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic"><em>I</em></ToolbarButton>
-      <ToolbarButton active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough"><s>S</s></ToolbarButton>
+      <ToolbarButton active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold">
+        <Bold size={16} />
+      </ToolbarButton>
+      <ToolbarButton active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic">
+        <Italic size={16} />
+      </ToolbarButton>
+      <ToolbarButton active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough">
+        <Strikethrough size={16} />
+      </ToolbarButton>
 
       <Divider />
 
-      <ToolbarButton active={editor.isActive("link")} onClick={setLink} title="Link">🔗</ToolbarButton>
+      <ToolbarButton active={editor.isActive("link")} onClick={setLink} title="Link">
+        <Link2 size={16} />
+      </ToolbarButton>
 
       {/* Image upload */}
-      <ToolbarButton onClick={() => imageInputRef.current?.click()} title="Upload image">📷</ToolbarButton>
+      <ToolbarButton onClick={() => imageInputRef.current?.click()} title="Upload image">
+        <ImageIcon size={16} />
+      </ToolbarButton>
       <input
         ref={imageInputRef}
         type="file"
@@ -149,7 +175,9 @@ function Toolbar({ editor }: { editor: Editor }) {
       />
 
       {/* Video upload */}
-      <ToolbarButton onClick={() => videoInputRef.current?.click()} title="Upload video">🎬</ToolbarButton>
+      <ToolbarButton onClick={() => videoInputRef.current?.click()} title="Upload video">
+        <VideoIcon size={16} />
+      </ToolbarButton>
       <input
         ref={videoInputRef}
         type="file"
@@ -160,8 +188,12 @@ function Toolbar({ editor }: { editor: Editor }) {
 
       <Divider />
 
-      <ToolbarButton active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code">&lt;/&gt;</ToolbarButton>
-      <ToolbarButton active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Blockquote">&ldquo;</ToolbarButton>
+      <ToolbarButton active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code">
+        <Code size={16} />
+      </ToolbarButton>
+      <ToolbarButton active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Blockquote">
+        <Quote size={16} />
+      </ToolbarButton>
     </div>
   );
 }
@@ -190,7 +222,7 @@ export function RichEditor({ placeholder = "Write your piece here…", onChange,
     },
     editorProps: {
       attributes: {
-        class: "outline-none min-h-64 px-5 py-4 text-sm leading-7 font-sans",
+        class: "outline-none min-h-64 px-6 py-5 text-[15px] leading-relaxed font-sans tiptap-editor-content",
       },
     },
   });
@@ -199,28 +231,104 @@ export function RichEditor({ placeholder = "Write your piece here…", onChange,
 
   return (
     <div
-      className="rounded-xl overflow-hidden"
-      style={{ border: "1px solid var(--c-border)" }}
+      className="rounded-xl overflow-hidden cresc-editor-wrapper"
+      style={{
+        border: "1px solid var(--c-border)",
+        background: "var(--c-surface-hi)",
+      }}
     >
       <Toolbar editor={editor} />
       <div
         style={{
-          background: "var(--c-surface-hi)",
-          // Prose styles for the editable area
+          background: "var(--c-bg-soft)",
         }}
       >
         <style>{`
-          .tiptap p { margin: 0 0 0.75em; }
-          .tiptap h1 { font-size: 1.6em; font-weight: 700; margin: 1em 0 0.4em; letter-spacing: -0.02em; }
-          .tiptap h2 { font-size: 1.3em; font-weight: 700; margin: 0.8em 0 0.4em; }
-          .tiptap a { color: var(--c-violet); text-decoration: underline; }
-          .tiptap img { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
-          .tiptap video { max-width: 100%; border-radius: 8px; margin: 0.5em 0; }
-          .tiptap code { font-family: var(--font-mono); font-size: 0.875em; padding: 0.1em 0.35em; border-radius: 4px; background: rgba(255,255,255,0.06); }
-          .tiptap pre { background: rgba(0,0,0,0.3); padding: 0.8em 1em; border-radius: 8px; overflow-x: auto; margin: 0.75em 0; }
-          .tiptap blockquote { border-left: 3px solid var(--c-violet); padding-left: 1em; color: var(--c-muted); margin: 0.75em 0; }
-          .tiptap ul, .tiptap ol { padding-left: 1.5em; margin: 0.5em 0; }
-          .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--c-dim); pointer-events: none; float: left; height: 0; }
+          .cresc-editor-wrapper {
+            transition: border-color 0.22s ease, box-shadow 0.22s ease;
+          }
+          .cresc-editor-wrapper:focus-within {
+            border-color: var(--c-violet) !important;
+            box-shadow: 0 0 24px rgba(155, 134, 255, 0.14) !important;
+          }
+          .tiptap-editor-content p {
+            margin: 0 0 1.1em;
+            color: var(--c-text);
+            font-size: 15px;
+            line-height: 1.7;
+          }
+          .tiptap-editor-content h1 {
+            font-family: var(--font-heading), sans-serif;
+            font-size: 1.85em;
+            font-weight: 700;
+            margin: 1.2em 0 0.5em;
+            letter-spacing: -0.025em;
+            color: var(--c-text);
+          }
+          .tiptap-editor-content h2 {
+            font-family: var(--font-heading), sans-serif;
+            font-size: 1.45em;
+            font-weight: 700;
+            margin: 1em 0 0.5em;
+            letter-spacing: -0.02em;
+            color: var(--c-text);
+          }
+          .tiptap-editor-content a {
+            color: var(--c-violet);
+            text-decoration: underline;
+            font-weight: 500;
+          }
+          .tiptap-editor-content img {
+            max-width: 100%;
+            border-radius: 12px;
+            margin: 1.2em 0;
+            border: 1px solid var(--c-border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+          }
+          .tiptap-editor-content video {
+            max-width: 100%;
+            border-radius: 12px;
+            margin: 1.2em 0;
+            border: 1px solid var(--c-border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+          }
+          .tiptap-editor-content code {
+            font-family: var(--font-mono), monospace;
+            font-size: 0.9em;
+            padding: 0.2em 0.4em;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.06);
+            color: var(--c-accent);
+          }
+          .tiptap-editor-content pre {
+            background: rgba(0,0,0,0.3);
+            padding: 1.2em 1.5em;
+            border-radius: 10px;
+            overflow-x: auto;
+            margin: 1em 0;
+            border: 1px solid var(--c-border);
+          }
+          .tiptap-editor-content blockquote {
+            border-left: 4px solid var(--c-violet);
+            padding-left: 1.2em;
+            color: var(--c-muted);
+            font-style: italic;
+            margin: 1.2em 0;
+          }
+          .tiptap-editor-content ul, .tiptap-editor-content ol {
+            padding-left: 1.8em;
+            margin: 0.8em 0;
+          }
+          .tiptap-editor-content li {
+            margin-bottom: 0.4em;
+          }
+          .tiptap-editor-content p.is-editor-empty:first-child::before {
+            content: attr(data-placeholder);
+            color: var(--c-dim);
+            pointer-events: none;
+            float: left;
+            height: 0;
+          }
         `}</style>
         <EditorContent editor={editor} />
       </div>

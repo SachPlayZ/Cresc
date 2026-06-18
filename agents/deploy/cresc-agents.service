@@ -1,0 +1,34 @@
+[Unit]
+Description=Cresc Agents Worker (PricingAgent, ReaderAgent, TipFeedback)
+Documentation=https://github.com/SachPlayZ/Cresc
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+
+# Absolute path to the agents directory on the EC2 instance.
+# Must match EC2_APP_DIR/agents set in GitHub secrets.
+WorkingDirectory=/home/ubuntu/Cresc/agents
+
+# tsx is in dependencies (not devDependencies), so it survives npm ci --omit=dev
+ExecStart=/home/ubuntu/Cresc/agents/node_modules/.bin/tsx src/index.ts
+
+# Secrets are baked into this file on the server — never committed to git.
+# Copy agents/.env.local to /etc/cresc-agents.env, then set permissions:
+#   sudo cp /home/ubuntu/Cresc/agents/.env.local /etc/cresc-agents.env
+#   sudo chmod 600 /etc/cresc-agents.env && sudo chown root:root /etc/cresc-agents.env
+EnvironmentFile=/etc/cresc-agents.env
+
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cresc-agents
+
+# Give the worker time to finish in-flight jobs on shutdown
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,57 @@
+name: Deploy Agents
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agents/**'
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: agents/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: agents
+
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: agents
+
+  deploy:
+    name: Deploy to EC2
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            APP_DIR="${{ secrets.EC2_APP_DIR }}"
+
+            echo "--- pulling latest ---"
+            cd "$APP_DIR"
+            git pull origin main
+
+            echo "--- installing dependencies ---"
+            cd "$APP_DIR/agents"
+            npm ci --omit=dev
+
+            echo "--- restarting service ---"
+            sudo systemctl restart cresc-agents
+            sudo systemctl status cresc-agents --no-pager --lines=20
