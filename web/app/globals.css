@@ -230,7 +230,7 @@
 [data-reveal] {
   animation: cresc-fadeup linear both;
   animation-timeline: view();
-  animation-range: entry 0% cover 32%;
+  animation-range: entry 0% entry 70%;
 }
 
 @media (prefers-reduced-motion: reduce) {

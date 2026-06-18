@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 type Theme = "dark" | "light";
 type DemoType = "article" | "photo" | "video" | "art";
@@ -527,6 +528,7 @@ export default function Home() {
               border: "8px solid var(--c-accent)",
               borderBottom: "none",
               borderRadius: "27px 27px 0 0",
+              transform: "translateX(-50%)",
               transformOrigin: "bottom right",
               animation:
                 "ld-shackle 1.7s cubic-bezier(.5,1.5,.4,1) forwards",
@@ -571,6 +573,7 @@ export default function Home() {
               borderRadius: "50%",
               background: "var(--c-violet)",
               boxShadow: "0 0 14px var(--c-violet)",
+              transform: "translateX(-50%)",
               animation: "ld-coin 1.7s ease-in forwards",
             }}
           />
@@ -711,9 +714,7 @@ export default function Home() {
               }}
             />
           </button>
-          <Button variant="outline" size="sm" className="cresc-btn-ghost text-sm font-semibold">
-            Connect Wallet
-          </Button>
+          <ConnectButton />
           <Button
             size="sm"
             className="cresc-btn-accent rounded-full text-sm font-bold px-5"
