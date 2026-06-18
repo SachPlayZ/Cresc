@@ -1,0 +1,136 @@
+/**
+ * lib/config.ts — typed, validated environment config for Cresc.
+ * M0: reads all env vars from CLAUDE.md §5; throws on missing required vars (unless mock mode).
+ * isMockMode = !LLM_API_KEY — agents run deterministic canned responses when true.
+ */
+
+// Arc Testnet constants (CLAUDE.md §4.1–4.2 ground truth — do NOT re-derive)
+export const ARC_CHAIN_ID = 5042002 as const;
+export const ARC_CAIP2 = "eip155:5042002" as const;
+export const ARC_SDK_CHAIN = "arcTestnet" as const;
+export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
+export const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as const;
+// GatewayWallet = verifyingContract in EIP-3009 domain (CLAUDE.md §4.2, domain 26, VERIFIED)
+export const GATEWAY_WALLET_ADDRESS = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9" as const;
+export const GATEWAY_MINTER_ADDRESS = "0x0022222ABE238Cc2C7Bb1f21003F0a260052475B" as const;
+export const GATEWAY_FACILITATOR_URL = "https://gateway-api-testnet.circle.com" as const;
+export const ARC_EXPLORER_BASE = "https://testnet.arcscan.app" as const;
+
+// USDC ERC-20 decimals on Arc (§4.2: 6 for ERC-20 interface, NOT 18 native gas)
+// Always read decimals() from contract at runtime; this is the known value for validation only.
+export const USDC_ERC20_DECIMALS = 6 as const;
+
+// --- Runtime env loading ---
+
+function getEnv(key: string): string | undefined {
+  return process.env[key];
+}
+
+function requireEnv(key: string, context: string): string {
+  const val = getEnv(key);
+  if (!val) {
+    throw new Error(
+      `[config] Missing required env var: ${key} (needed for ${context}). ` +
+        `Copy .env.example → .env.local and fill it in.`
+    );
+  }
+  return val;
+}
+
+function parseNumber(key: string, fallback: number): number {
+  const raw = getEnv(key);
+  if (!raw) return fallback;
+  const n = parseFloat(raw);
+  if (isNaN(n)) throw new Error(`[config] ${key} must be a number, got: "${raw}"`);
+  return n;
+}
+
+// --- Mock mode detection (no LLM_API_KEY = mock mode) ---
+export const isMockMode: boolean = !getEnv("LLM_API_KEY");
+
+// --- Supabase (always required) ---
+export const SUPABASE_URL: string = (() => {
+  const val = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  if (!val) {
+    // In mock/dev mode without Supabase, return empty string — DB calls will fail gracefully.
+    // Assumption: Supabase is optional in pure mock mode; validated in M1.
+    return "";
+  }
+  return val;
+})();
+
+export const SUPABASE_ANON_KEY: string = getEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") ?? "";
+export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+// --- Arc / Circle (server-side only — never NEXT_PUBLIC_) ---
+export const ARC_RPC_URL: string = getEnv("ARC_RPC_URL") ?? "";
+export const SELLER_ADDRESS: string = getEnv("SELLER_ADDRESS") ?? "";
+export const SELLER_PRIVATE_KEY: string = getEnv("SELLER_PRIVATE_KEY") ?? "";
+export const BUYER_ADDRESS: string = getEnv("BUYER_ADDRESS") ?? "";
+export const BUYER_PRIVATE_KEY: string = getEnv("BUYER_PRIVATE_KEY") ?? "";
+
+// --- LLM (Groq via OpenAI-compatible API) ---
+export const LLM_API_KEY: string = getEnv("LLM_API_KEY") ?? "";
+export const LLM_BASE_URL: string =
+  getEnv("LLM_BASE_URL") ?? "https://api.groq.com/openai/v1";
+// Default: a strong instruction-following Groq model that returns clean JSON.
+// Assumption: llama-3.3-70b-versatile is the best Groq model for clean JSON reasoning as of 2026-06.
+export const LLM_MODEL: string =
+  getEnv("LLM_MODEL") ?? "llama-3.3-70b-versatile";
+
+// --- App pricing config ---
+export const PRICE_CEILING: number = parseNumber("PRICE_CEILING", 0.1);
+export const PRICE_FLOOR_MIN: number = parseNumber("PRICE_FLOOR_MIN", 0.001);
+export const SWEEP_INTERVAL_MINUTES: number = parseNumber("SWEEP_INTERVAL_MINUTES", 15);
+export const HEARTBEAT_INTERVAL_SECONDS: number = parseNumber("HEARTBEAT_INTERVAL_SECONDS", 5);
+export const SESSION_END_TIMEOUT_SECONDS: number = parseNumber("SESSION_END_TIMEOUT_SECONDS", 25);
+
+// Sanity invariants (CLAUDE.md §7.1)
+if (PRICE_CEILING > 0.1) {
+  throw new Error("[config] PRICE_CEILING must be <= 0.1 (USDC)");
+}
+if (PRICE_FLOOR_MIN < 0.000001) {
+  throw new Error("[config] PRICE_FLOOR_MIN must be >= $0.000001 (Gateway minimum)");
+}
+if (PRICE_FLOOR_MIN >= PRICE_CEILING) {
+  throw new Error("[config] PRICE_FLOOR_MIN must be < PRICE_CEILING");
+}
+
+/**
+ * validateServerConfig — call this in server-only code paths (API routes, agents).
+ * Throws if critical server-side vars are missing AND we're not in mock mode.
+ */
+export function validateServerConfig(): void {
+  if (!isMockMode) {
+    requireEnv("LLM_API_KEY", "LLM agent calls");
+    requireEnv("LLM_MODEL", "LLM agent calls");
+  }
+  // Payment config is required when payment routes are active (M3/M4).
+  // M0 stubs these — validated in M3.
+}
+
+/**
+ * validatePaymentConfig — call from Circle adapter (M3) before any payment operation.
+ * Throws if EOA wallet keys or RPC are missing.
+ */
+export function validatePaymentConfig(): void {
+  requireEnv("ARC_RPC_URL", "Arc RPC connection");
+  requireEnv("SELLER_ADDRESS", "payment settlement");
+  requireEnv("SELLER_PRIVATE_KEY", "payment signing (server-side only)");
+  requireEnv("BUYER_ADDRESS", "payment sending");
+  requireEnv("BUYER_PRIVATE_KEY", "payment signing");
+}
+
+// Frozen chain config object for convenience
+export const chainConfig = {
+  chainId: ARC_CHAIN_ID,
+  caip2: ARC_CAIP2,
+  sdkChain: ARC_SDK_CHAIN,
+  usdcAddress: USDC_ADDRESS,
+  eurcAddress: EURC_ADDRESS,
+  gatewayWalletAddress: GATEWAY_WALLET_ADDRESS,
+  gatewayMinterAddress: GATEWAY_MINTER_ADDRESS,
+  gatewayFacilitatorUrl: GATEWAY_FACILITATOR_URL,
+  explorerBase: ARC_EXPLORER_BASE,
+  rpcUrl: ARC_RPC_URL,
+} as const;

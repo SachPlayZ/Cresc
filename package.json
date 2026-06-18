@@ -1,0 +1,22 @@
+{
+  "name": "cresc",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["web", "agents"],
+  "scripts": {
+    "dev": "concurrently --names web,agents --prefix-colors cyan,magenta \"npm run dev -w web\" \"npm run dev -w agents\"",
+    "dev:web": "npm run dev -w web",
+    "dev:agents": "npm run dev -w agents",
+    "build": "npm run build -w web",
+    "seed": "npx tsx scripts/seed.mts",
+    "demo": "npx tsx scripts/demo-harness.mts",
+    "generate-wallets": "npx tsx scripts/generate-wallets.mts",
+    "setup": "node -e \"const fs=require('fs'); ['web','agents'].forEach(d=>{try{fs.symlinkSync('../.env.local',d+'/.env.local');}catch(e){if(e.code!=='EEXIST')throw e;}}); console.log('ok: .env.local symlinked into web/ and agents/');\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "dotenv": "^16.0.0"
+  }
+}

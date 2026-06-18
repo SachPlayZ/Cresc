@@ -1,0 +1,253 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* ============================================================
+   CRESC DESIGN SYSTEM — tokens, animations, hover utilities
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  --c-bg: #15101F;
+  --c-bg-soft: #1A1430;
+  --c-surface: #221A36;
+  --c-surface-hi: #2B2245;
+  --c-surface-2: #322750;
+  --c-border: rgba(190, 170, 255, 0.14);
+  --c-border-soft: rgba(190, 170, 255, 0.07);
+  --c-text: #EEE9FC;
+  --c-muted: rgba(238, 233, 252, 0.62);
+  --c-dim: rgba(238, 233, 252, 0.40);
+  --c-accent: #C6F84E;
+  --c-accent-ink: #1B2400;
+  --c-violet: #9B86FF;
+  --c-green: #86D6A8;
+  --c-amber: #E6C25A;
+  --c-red: #E08A8A;
+  --c-shadow: 0 22px 60px rgba(0, 0, 0, 0.5);
+  --c-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --c-glow: rgba(155, 134, 255, 0.18);
+}
+
+[data-theme="light"] {
+  --c-bg: #ECE7FA;
+  --c-bg-soft: #F3EFFC;
+  --c-surface: #FFFFFF;
+  --c-surface-hi: #FFFFFF;
+  --c-surface-2: #F4F0FF;
+  --c-border: rgba(60, 40, 120, 0.13);
+  --c-border-soft: rgba(60, 40, 120, 0.07);
+  --c-text: #1E1633;
+  --c-muted: rgba(30, 22, 51, 0.62);
+  --c-dim: rgba(30, 22, 51, 0.40);
+  --c-accent: #A6E22E;
+  --c-accent-ink: #1B2400;
+  --c-violet: #6A4DFF;
+  --c-green: #3E9E6B;
+  --c-amber: #B08412;
+  --c-red: #C25B5B;
+  --c-shadow: 0 22px 55px rgba(60, 40, 120, 0.16);
+  --c-shadow-sm: 0 8px 22px rgba(60, 40, 120, 0.10);
+  --c-glow: rgba(106, 77, 255, 0.16);
+}
+
+@keyframes cresc-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes cresc-ring {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes cresc-termin {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cresc-fadeup {
+  from { opacity: 0; transform: translateY(42px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cresc-coin {
+  0% { transform: translateY(96px) scale(0.7); opacity: 0; }
+  28% { opacity: 1; }
+  70% { transform: translateY(2px) scale(1); opacity: 1; }
+  100% { transform: translateY(-4px) scale(0.35); opacity: 0; }
+}
+@keyframes ld-coin {
+  0% { transform: translateX(-50%) translateY(-78px) scale(0.7); opacity: 0; }
+  26% { opacity: 1; }
+  48% { transform: translateX(-50%) translateY(2px) scale(1); }
+  58% { transform: translateX(-50%) translateY(2px) scale(1); opacity: 0; }
+  100% { opacity: 0; }
+}
+@keyframes ld-shackle {
+  0%, 50% { transform: translateX(-50%); }
+  62%, 100% { transform: translateX(-64%) translateY(-15px) rotate(-11deg); }
+}
+@keyframes ld-pop {
+  0%, 55% { transform: translateX(-50%) scale(1); }
+  62% { transform: translateX(-50%) scale(1.08); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+@keyframes ld-status {
+  0%, 55% { opacity: 0; }
+  70%, 100% { opacity: 1; }
+}
+
+[data-reveal] {
+  animation: cresc-fadeup linear both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 32%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  [data-reveal] {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+.cresc-btn-accent { transition: filter 0.2s, box-shadow 0.2s; }
+.cresc-btn-accent:hover { filter: brightness(1.05); }
+.cresc-btn-ghost { transition: border-color 0.2s, background 0.2s; }
+.cresc-btn-ghost:hover { border-color: var(--c-violet) !important; background: var(--c-surface-2) !important; }
+.cresc-btn-outline { transition: border-color 0.2s; }
+.cresc-btn-outline:hover { border-color: var(--c-violet) !important; }
+.cresc-nav-link { transition: color 0.2s; }
+.cresc-nav-link:hover { color: var(--c-text) !important; }
+.cresc-ticker:hover { animation-play-state: paused; }
+.cresc-btn-secondary { transition: border-color 0.2s; }
+.cresc-btn-secondary:hover { border-color: var(--c-violet) !important; }

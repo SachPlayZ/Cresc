@@ -1,0 +1,26 @@
+{
+  "name": "cresc-agents",
+  "version": "0.1.0",
+  "description": "Cresc agent workers — PricingAgent, ReaderAgent, tip feedback queue consumer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@circle-fin/x402-batching": "^3.1.2",
+    "@supabase/supabase-js": "^2.108.2",
+    "@x402/core": "^2.15.0",
+    "@x402/evm": "^2.15.0",
+    "dotenv": "^17.4.2",
+    "openai": "^6.44.0",
+    "viem": "^2.52.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "^5"
+  }
+}
