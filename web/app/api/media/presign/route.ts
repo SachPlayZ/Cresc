@@ -66,8 +66,7 @@ export async function POST(req: NextRequest) {
   });
 
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
-  const cdnBase = process.env.S3_CDN_BASE ?? `https://s3.${region}.amazonaws.com/${bucket}`;
-  const publicUrl = `${cdnBase}/${key}`;
+  const publicUrl = `/api/media/view?key=${key}`;
 
   return NextResponse.json({ uploadUrl, publicUrl });
 }
