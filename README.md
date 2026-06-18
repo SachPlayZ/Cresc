@@ -1,4 +1,23 @@
-# <img src="web/public/cresc-logo-transparent.png" alt="Cresc Logo" width="150" />
+<div align="center">
+
+<img src="./web/public/cresc-logo-transparent.png" alt="Cresc Logo" width="200"/>
+
+**Content platform with self-adjusting prices and gas-free nanopayments via the x402 protocol.**
+
+[![Arc Testnet](https://img.shields.io/badge/Arc-Testnet-blueviolet?style=flat-square)](https://testnet.arcscan.app)
+[![x402 Protocol](https://img.shields.io/badge/x402-Protocol-FF5733?style=flat-square)](https://github.com/x402)
+[![Built with Circle](https://img.shields.io/badge/Built_with-Circle_Stack-00D395?style=flat-square)](https://circle.com)
+[![Next.js](https://img.shields.io/badge/Next.js-16.2-black?style=flat-square&logo=next.js)](https://nextjs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-22+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+[![Supabase](https://img.shields.io/badge/Supabase-DB-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com)
+
+[Architecture](#core-system-architecture) · [User Experience & Money Flow](#user-experience--money-flow) · [Development Setup](#development-setup--installation) · [Emergent Pricing Loop](#testing-the-emergent-pricing-loop)
+
+</div>
+
+---
+
+## What is Cresc?
 
 Cresc is a content platform where articles and media carry a **live, self-adjusting price** between **$0.001 and $0.1**. It leverages the **x402 protocol** (HTTP 402 Payment Required for API endpoints) on the **Circle Arc Testnet** to enable sub-cent, gas-free nanopayments.
 
@@ -75,11 +94,6 @@ graph TD
     subgraph Payout ["5. Creator Payout"]
         SG -->|Withdraw /api/withdraw| CW["Creator External Wallet (EOA Address)"]
     end
-
-    style Faucet fill:#f9f,stroke:#333,stroke-width:2px
-    style GB fill:#bbf,stroke:#333,stroke-width:2px
-    style SG fill:#bfb,stroke:#333,stroke-width:2px
-    style CW fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
 ---
