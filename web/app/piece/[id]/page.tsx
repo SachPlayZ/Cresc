@@ -98,6 +98,12 @@ export default async function PiecePage({ params }: PageProps) {
           >
             Browse
           </Link>
+          <Link
+            href="/history"
+            className="font-sans text-sm font-semibold text-muted-foreground hover:text-foreground no-underline transition-colors"
+          >
+            My History
+          </Link>
         </div>
 
         {/* Standing price badge */}
@@ -155,7 +161,7 @@ export default async function PiecePage({ params }: PageProps) {
           <span>by</span>
           {displayCreator && (
             <Link
-              href={`/browse?creator=${displayCreator.wallet_address}`}
+              href={`/creator/${displayCreator.wallet_address}`}
               className="font-bold hover:underline transition-colors flex items-center gap-1.5"
               style={{ color: "var(--c-violet)" }}
             >

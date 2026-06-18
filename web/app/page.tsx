@@ -716,6 +716,16 @@ export default function Home() {
             />
           </button>
           <ConnectButton />
+          <Link href="/history">
+            <Button
+              size="sm"
+              variant="outline"
+              className="cresc-btn-outline rounded-full text-sm font-semibold px-4"
+              style={{ color: "var(--c-muted)", borderColor: "var(--c-border)" }}
+            >
+              My History
+            </Button>
+          </Link>
           <Link href="/browse" style={{ textDecoration: "none" }}>
             <Button
               size="sm"

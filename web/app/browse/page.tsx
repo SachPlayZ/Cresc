@@ -248,6 +248,16 @@ function BrowseContent() {
             </span>
           </button>
           <ConnectButton />
+          <Link href="/history">
+            <Button
+              size="sm"
+              variant="outline"
+              className="cresc-btn-outline rounded-full text-xs font-semibold px-4"
+              style={{ color: "var(--c-muted)", borderColor: "var(--c-border)" }}
+            >
+              My History
+            </Button>
+          </Link>
         </div>
       </nav>
 
@@ -714,19 +724,14 @@ function PieceCard({
           borderTop: "1px solid var(--c-border-soft)",
         }}
       >
-        <button
+        <Link
+          href={`/creator/${piece.creators?.wallet_address}`}
           onClick={(e) => {
             e.stopPropagation();
-            if (piece.creators?.wallet_address) {
-              onSelectCreator(piece.creators.wallet_address);
-            }
           }}
-          title={`Filter by ${piece.creators?.display_name || "creator"}`}
+          title={`View profile of ${piece.creators?.display_name || "creator"}`}
           style={{
-            background: "none",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
+            textDecoration: "none",
             textAlign: "left",
             display: "flex",
             flexDirection: "column",
@@ -734,13 +739,13 @@ function PieceCard({
             outline: "none",
           }}
         >
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--c-text)" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--c-text)" }} className="hover:underline">
             {piece.creators?.display_name || "Unknown Creator"}
           </span>
           <span style={{ fontSize: 11, color: "var(--c-dim)" }}>
             {piece.creators?.wallet_address ? abbreviateAddress(piece.creators.wallet_address) : ""}
           </span>
-        </button>
+        </Link>
 
         <Link
           href={`/piece/${piece.id}`}
