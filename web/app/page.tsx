@@ -634,15 +634,13 @@ export default function Home() {
             gap: 9,
           }}
         >
-          <span
+          <img
+            src="/cresc-logo-transparent.png"
+            alt="Cresc Logo"
             style={{
-              width: 11,
-              height: 11,
-              background: "var(--c-accent)",
-              borderRadius: 3,
-              display: "inline-block",
-              transform: "rotate(45deg)",
-              boxShadow: "0 0 12px var(--c-accent)",
+              width: 20,
+              height: 20,
+              objectFit: "contain",
             }}
           />
           Cresc
@@ -716,21 +714,28 @@ export default function Home() {
             />
           </button>
           <ConnectButton />
-          <Link href="/history">
+          <Link href="/history" style={{ display: "inline-flex" }}>
             <Button
-              size="sm"
-              variant="outline"
-              className="cresc-btn-outline rounded-full text-sm font-semibold px-4"
-              style={{ color: "var(--c-muted)", borderColor: "var(--c-border)" }}
+              className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+              style={{
+                height: 38,
+                color: "var(--c-text)",
+                border: "1px solid var(--c-border)",
+                background: "transparent",
+              }}
             >
               My History
             </Button>
           </Link>
-          <Link href="/browse" style={{ textDecoration: "none" }}>
+          <Link href="/browse" style={{ textDecoration: "none", display: "inline-flex" }}>
             <Button
-              size="sm"
-              className="cresc-btn-accent rounded-full text-sm font-bold px-5"
-              style={{ boxShadow: "0 0 0 1px var(--c-border-soft)" }}
+              className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
+              style={{
+                height: 38,
+                background: "var(--c-accent)",
+                color: "var(--c-accent-ink)",
+                boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
+              }}
             >
               Start Reading
             </Button>
@@ -2181,14 +2186,13 @@ export default function Home() {
                 marginBottom: 12,
               }}
             >
-              <span
+              <img
+                src="/cresc-logo-transparent.png"
+                alt="Cresc Logo"
                 style={{
-                  width: 11,
-                  height: 11,
-                  background: "var(--c-accent)",
-                  borderRadius: 3,
-                  display: "inline-block",
-                  transform: "rotate(45deg)",
+                  width: 20,
+                  height: 20,
+                  objectFit: "contain",
                 }}
               />
               Cresc

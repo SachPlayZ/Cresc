@@ -312,15 +312,13 @@ export default function DashboardClient({
               gap: 8,
             }}
           >
-            <span
+            <img
+              src="/cresc-logo-transparent.png"
+              alt="Cresc Logo"
               style={{
-                width: 10,
-                height: 10,
-                background: "var(--c-accent, #3b82f6)",
-                borderRadius: 2,
-                display: "inline-block",
-                transform: "rotate(45deg)",
-                boxShadow: "0 0 10px var(--c-accent, #3b82f6)",
+                width: 18,
+                height: 18,
+                objectFit: "contain",
               }}
             />
             Cresc

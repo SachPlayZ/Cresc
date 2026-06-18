@@ -82,12 +82,13 @@ export default async function PiecePage({ params }: PageProps) {
             className="font-heading font-bold text-lg tracking-tight text-foreground no-underline flex items-center gap-2"
             style={{ letterSpacing: "-0.03em" }}
           >
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-sm"
+            <img
+              src="/cresc-logo-transparent.png"
+              alt="Cresc Logo"
               style={{
-                background: "var(--c-accent)",
-                transform: "rotate(45deg)",
-                boxShadow: "0 0 10px var(--c-accent)",
+                width: 18,
+                height: 18,
+                objectFit: "contain",
               }}
             />
             Cresc

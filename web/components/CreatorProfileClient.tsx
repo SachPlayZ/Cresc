@@ -136,15 +136,13 @@ export default function CreatorProfileClient({ creator, pieces }: CreatorProfile
               color: "var(--c-text)",
             }}
           >
-            <span
+            <img
+              src="/cresc-logo-transparent.png"
+              alt="Cresc Logo"
               style={{
-                width: 11,
-                height: 11,
-                background: "var(--c-accent)",
-                borderRadius: 3,
-                display: "inline-block",
-                transform: "rotate(45deg)",
-                boxShadow: "0 0 12px var(--c-accent)",
+                width: 20,
+                height: 20,
+                objectFit: "contain",
               }}
             />
             Cresc
@@ -205,8 +203,16 @@ export default function CreatorProfileClient({ creator, pieces }: CreatorProfile
             </span>
           </button>
           <ConnectButton />
-          <Link href="/history">
-            <Button size="sm" variant="outline" className="rounded-full text-xs font-semibold px-4">
+          <Link href="/history" style={{ display: "inline-flex" }}>
+            <Button
+              className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+              style={{
+                height: 38,
+                color: "var(--c-text)",
+                border: "1px solid var(--c-border)",
+                background: "transparent",
+              }}
+            >
               My History
             </Button>
           </Link>

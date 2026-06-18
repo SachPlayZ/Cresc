@@ -190,15 +190,13 @@ export default function HistoryPage() {
               color: "var(--c-text)",
             }}
           >
-            <span
+            <img
+              src="/cresc-logo-transparent.png"
+              alt="Cresc Logo"
               style={{
-                width: 11,
-                height: 11,
-                background: "var(--c-accent)",
-                borderRadius: 3,
-                display: "inline-block",
-                transform: "rotate(45deg)",
-                boxShadow: "0 0 12px var(--c-accent)",
+                width: 20,
+                height: 20,
+                objectFit: "contain",
               }}
             />
             Cresc

@@ -192,15 +192,13 @@ function BrowseContent() {
             color: "var(--c-text)",
           }}
         >
-          <span
+          <img
+            src="/cresc-logo-transparent.png"
+            alt="Cresc Logo"
             style={{
-              width: 11,
-              height: 11,
-              background: "var(--c-accent)",
-              borderRadius: 3,
-              display: "inline-block",
-              transform: "rotate(45deg)",
-              boxShadow: "0 0 12px var(--c-accent)",
+              width: 20,
+              height: 20,
+              objectFit: "contain",
             }}
           />
           Cresc
@@ -248,12 +246,15 @@ function BrowseContent() {
             </span>
           </button>
           <ConnectButton />
-          <Link href="/history">
+          <Link href="/history" style={{ display: "inline-flex" }}>
             <Button
-              size="sm"
-              variant="outline"
-              className="cresc-btn-outline rounded-full text-xs font-semibold px-4"
-              style={{ color: "var(--c-muted)", borderColor: "var(--c-border)" }}
+              className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+              style={{
+                height: 38,
+                color: "var(--c-text)",
+                border: "1px solid var(--c-border)",
+                background: "transparent",
+              }}
             >
               My History
             </Button>
