@@ -1,6 +1,6 @@
 // lib/repo/price_decisions.ts
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import type { PriceDecision } from './types.js';
+import type { PriceDecision } from './types';
 
 export async function createPriceDecision(
   db: SupabaseClient,

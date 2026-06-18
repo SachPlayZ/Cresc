@@ -1,7 +1,7 @@
 // lib/repo/jobs.ts — job queue helpers for the web app (enqueue side).
 // The agents service (Cresc-Agents) handles the consume/claim side.
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Job, JobPayload } from './types.js';
+import type { Job, JobPayload } from './types';
 
 export async function enqueueJob(
   db: SupabaseClient,

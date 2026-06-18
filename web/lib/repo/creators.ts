@@ -1,6 +1,6 @@
 // lib/repo/creators.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Creator } from './types.js';
+import type { Creator } from './types';
 
 export async function getCreator(db: SupabaseClient, id: string): Promise<Creator | null> {
   const { data, error } = await db.from('creators').select('*').eq('id', id).single();

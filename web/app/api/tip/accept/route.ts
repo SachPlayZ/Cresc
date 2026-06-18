@@ -144,6 +144,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       status: "pending",
       tx_ref: null,
       arc_explorer_url: null,
+      payout_ref: null,
     });
   } catch {
     if (isMockMode) {

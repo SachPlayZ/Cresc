@@ -70,6 +70,9 @@ export async function GET(
   const standingPrice = moneyFromBaseUnits(BigInt(standingPriceStr), USDC_ERC20_DECIMALS);
 
   // --- 2. Build requirements (pure function — no network call) ---
+  // payTo is SELLER_ADDRESS (platform wallet). Gateway credits accumulate there and
+  // can be withdrawn via the dashboard. Creator earnings are tracked per-piece in the
+  // payments table — that's the source of truth for revenue, not Gateway balance.
   const requirements = buildPaymentRequirements(standingPrice, SELLER_ADDRESS);
 
   // --- 3. Check for incoming payment ---
@@ -77,10 +80,15 @@ export async function GET(
 
   if (!paymentHeader) {
     // No payment — return HTTP 402 with PAYMENT-REQUIRED header.
-    const resourceUrl = `${req.nextUrl.origin}/api/piece/${pieceId}`;
+    // resource must be an object with url + description + mimeType (Gateway schema).
+    const resource = {
+      url: `${req.nextUrl.origin}/api/piece/${pieceId}`,
+      description: "Cresc article unlock",
+      mimeType: "application/json",
+    };
     const paymentRequired = {
       x402Version: 2,
-      resource: resourceUrl,
+      resource,
       accepts: [requirements],
     };
     const encoded = Buffer.from(JSON.stringify(paymentRequired)).toString("base64");
@@ -135,6 +143,7 @@ export async function GET(
       status: "pending",
       tx_ref: null,
       arc_explorer_url: null,
+      payout_ref: null,
     });
   } catch {
     // In mock mode without DB, synthesize a row.

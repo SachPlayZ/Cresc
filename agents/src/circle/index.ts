@@ -32,7 +32,11 @@ import {
   ARC_EXPLORER_BASE,
   ARC_RPC_URL,
   SELLER_PRIVATE_KEY,
+  CIRCLE_BUYER_WALLET_ID,
+  CIRCLE_BUYER_WALLET_ADDRESS,
+  CIRCLE_SELLER_WALLET_ID,
 } from "../config.js";
+import { isCircleWalletMode, makeCircleSigner, getCircleWalletBalance } from "./wallets.js";
 
 export type TxRef = { hash: `0x${string}`; chain: string };
 
@@ -58,7 +62,7 @@ export type PaymentResult = {
   errorReason?: string;
 };
 
-const isMockCircle = !ARC_RPC_URL || !SELLER_PRIVATE_KEY;
+const isMockCircle = !ARC_RPC_URL || (!SELLER_PRIVATE_KEY && !isCircleWalletMode);
 
 const arcTestnetChain = defineChain({
   id: ARC_CHAIN_ID,
@@ -157,6 +161,12 @@ export async function getGatewayBalance(address: string): Promise<{
       withdrawing: { value: 0n, decimals: 6 },
     };
   }
+  if (isCircleWalletMode && !SELLER_PRIVATE_KEY) {
+    const balance = CIRCLE_SELLER_WALLET_ID
+      ? await getCircleWalletBalance(CIRCLE_SELLER_WALLET_ID)
+      : { value: 0n, decimals: 6 };
+    return { total: balance, withdrawable: balance, withdrawing: { value: 0n, decimals: 6 } };
+  }
   const client = makeGatewayClient(SELLER_PRIVATE_KEY);
   const balances = await client.getBalances(address as `0x${string}`);
   const { total, withdrawable, withdrawing } = balances.gateway;
@@ -224,17 +234,28 @@ export async function signPaymentAuthorization(
       },
     };
   }
-  const account = privateKeyToAccount(privKey as `0x${string}`);
-  const walletClient = createWalletClient({
-    account,
-    chain: arcTestnetChain,
-    transport: http(requireRpc()),
-  });
-  const signer = {
-    address: account.address,
-    signTypedData: (params: Parameters<typeof walletClient.signTypedData>[0]) =>
-      walletClient.signTypedData(params),
-  };
+
+  let signer: { address: `0x${string}`; signTypedData: (...args: unknown[]) => Promise<`0x${string}`> };
+
+  if (isCircleWalletMode && CIRCLE_BUYER_WALLET_ID && CIRCLE_BUYER_WALLET_ADDRESS) {
+    signer = makeCircleSigner(
+      CIRCLE_BUYER_WALLET_ID,
+      CIRCLE_BUYER_WALLET_ADDRESS as `0x${string}`
+    ) as typeof signer;
+  } else {
+    const account = privateKeyToAccount(privKey as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain: arcTestnetChain,
+      transport: http(requireRpc()),
+    });
+    signer = {
+      address: account.address,
+      signTypedData: (params: Parameters<typeof walletClient.signTypedData>[0]) =>
+        walletClient.signTypedData(params),
+    } as typeof signer;
+  }
+
   const scheme = new BatchEvmScheme(signer);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payload = await scheme.createPaymentPayload(2, requirements as any);
@@ -248,6 +269,9 @@ export async function withdrawFromGateway(
   amount: UsdcAmount
 ): Promise<TxRef> {
   if (isMockCircle) return { ...MOCK_TX, chain };
+  if (isCircleWalletMode && !privKey) {
+    throw new Error("Withdrawals for Circle-managed wallets must be done via the Circle console — no raw key available.");
+  }
   const client = makeGatewayClient(privKey);
   const formatted = formatUnits(amount.value, amount.decimals);
   const result = await client.withdraw(formatted, {

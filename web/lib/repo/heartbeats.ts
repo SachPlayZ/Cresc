@@ -1,6 +1,6 @@
 // lib/repo/heartbeats.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Heartbeat } from './types.js';
+import type { Heartbeat } from './types';
 
 export async function insertHeartbeat(
   db: SupabaseClient,

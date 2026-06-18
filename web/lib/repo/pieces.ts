@@ -1,6 +1,6 @@
 // lib/repo/pieces.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Piece } from './types.js';
+import type { Piece } from './types';
 
 export async function getPiece(db: SupabaseClient, id: string): Promise<Piece | null> {
   const { data, error } = await db.from('pieces').select('*').eq('id', id).single();
@@ -17,6 +17,28 @@ export async function getStandingPrice(db: SupabaseClient, pieceId: string): Pro
     .single();
   if (error && error.code !== 'PGRST116') throw error;
   return data?.current_price ?? null;
+}
+
+/**
+ * Returns the standing price + the creator's wallet address for a listed piece.
+ * Used by the x402 route so payments go directly to the creator, not the platform wallet.
+ */
+export async function getStandingPriceWithCreator(
+  db: SupabaseClient,
+  pieceId: string
+): Promise<{ price: string; creatorWalletAddress: string } | null> {
+  const { data, error } = await db
+    .from('pieces')
+    .select('current_price, creators!inner(wallet_address)')
+    .eq('id', pieceId)
+    .eq('status', 'listed')
+    .single();
+  if (error && error.code !== 'PGRST116') throw error;
+  if (!data) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const creatorWalletAddress = (data as any).creators?.wallet_address as string | undefined;
+  if (!creatorWalletAddress) return null;
+  return { price: data.current_price, creatorWalletAddress };
 }
 
 export async function listPiecesByCreator(db: SupabaseClient, creatorId: string): Promise<Piece[]> {

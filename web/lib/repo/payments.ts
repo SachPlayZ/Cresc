@@ -1,6 +1,6 @@
 // lib/repo/payments.ts
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import type { Payment } from './types.js';
+import type { Payment } from './types';
 
 export async function createPayment(
   db: SupabaseClient,
@@ -43,6 +43,55 @@ export async function getPaymentsByPiece(
     .limit(limit);
   if (error) throw error;
   return data ?? [];
+}
+
+/**
+ * Sum of settled, not-yet-paid-out payments for all pieces owned by creatorId.
+ * Returns base-unit bigint (6-dec USDC).
+ */
+export async function getUnpaidEarnings(
+  db: SupabaseClient,
+  creatorId: string
+): Promise<bigint> {
+  const { data: pieces } = await db
+    .from('pieces')
+    .select('id')
+    .eq('creator_id', creatorId);
+  const pieceIds = (pieces ?? []).map((p: { id: string }) => p.id);
+  if (!pieceIds.length) return 0n;
+  const { data, error } = await db
+    .from('payments')
+    .select('amount')
+    .in('piece_id', pieceIds)
+    .eq('status', 'settled')
+    .is('payout_ref', null);
+  if (error) throw error;
+  return (data ?? []).reduce((sum: bigint, p: { amount: string }) => sum + BigInt(p.amount), 0n);
+}
+
+/**
+ * Mark all unpaid settled payments for creatorId as paid out.
+ * Called immediately after a successful withdrawFromGatewayCircle.
+ * The WHERE payout_ref IS NULL guard is atomic — safe against concurrent payout requests.
+ */
+export async function markPaymentsPaidOut(
+  db: SupabaseClient,
+  creatorId: string,
+  payoutTxRef: string
+): Promise<void> {
+  const { data: pieces } = await db
+    .from('pieces')
+    .select('id')
+    .eq('creator_id', creatorId);
+  const pieceIds = (pieces ?? []).map((p: { id: string }) => p.id);
+  if (!pieceIds.length) return;
+  const { error } = await db
+    .from('payments')
+    .update({ payout_ref: payoutTxRef })
+    .in('piece_id', pieceIds)
+    .eq('status', 'settled')
+    .is('payout_ref', null);
+  if (error) throw error;
 }
 
 // Realtime subscription for settled payments on a piece (dashboard live feed)

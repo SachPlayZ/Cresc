@@ -6,40 +6,41 @@ export type {
   PriceDecision, TipDecision, Dispute, Job, Notification,
   JobPayload, PricingSweepPayload, ReaderEvalPayload, TipFeedbackPayload,
   SignalBundle, WindowStats,
-} from './types.js';
+} from './types';
 
-export { getCreator, getCreatorByWallet, createCreator, upsertCreator } from './creators.js';
+export { getCreator, getCreatorByWallet, createCreator, upsertCreator } from './creators';
 
 export {
-  getPiece, getStandingPrice, listPiecesByCreator, listListedPieces,
-  createPiece, updatePiecePrice, updatePieceStatus,
-} from './pieces.js';
+  getPiece, getStandingPrice, getStandingPriceWithCreator,
+  listPiecesByCreator, listListedPieces, createPiece, updatePiecePrice, updatePieceStatus,
+} from './pieces';
 
 export {
   getSession, createSession, updateSessionDwell, endSession,
   incrementRevisit, getOpenSessions,
-} from './sessions.js';
+} from './sessions';
 
-export { insertHeartbeat, getLastHeartbeat, getHeartbeatsSince } from './heartbeats.js';
+export { insertHeartbeat, getLastHeartbeat, getHeartbeatsSince } from './heartbeats';
 
 export {
   createPayment, settlePayment, failPayment, getPaymentsByPiece, subscribeToPayments,
-} from './payments.js';
+  getUnpaidEarnings, markPaymentsPaidOut,
+} from './payments';
 
 export {
   createPriceDecision, getRecentPriceDecisions, subscribeToPriceDecisions,
-} from './price_decisions.js';
+} from './price_decisions';
 
 export {
   createTipDecision, getTipDecision, getTipDecisionBySession, acceptTip, declineTip,
-} from './tip_decisions.js';
+} from './tip_decisions';
 
-export { createDispute, getDisputesByCreator } from './disputes.js';
+export { createDispute, getDisputesByCreator } from './disputes';
 
-export { enqueueJob, getJob } from './jobs.js';
+export { enqueueJob, getJob } from './jobs';
 
 export {
   createNotification, getUnreadNotifications, markNotificationRead, subscribeToNotifications,
-} from './notifications.js';
+} from './notifications';
 
-export { getSignalBundle } from './signals.js';
+export { getSignalBundle } from './signals';

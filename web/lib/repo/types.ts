@@ -13,6 +13,7 @@ export type Piece = {
   creator_id: string;
   title: string;
   body: string;
+  kind: 'article' | 'video';
   length_chars: number;
   topic_tags: string[];
   objective: 'MAX_REVENUE' | 'MAX_REACH';
@@ -54,6 +55,7 @@ export type Payment = {
   tx_ref: string | null;
   arc_explorer_url: string | null;
   status: 'pending' | 'settled' | 'failed';
+  payout_ref: string | null; // tx hash of creator payout, null = not yet paid out
   created_at: string;
 };
 
@@ -115,6 +117,19 @@ export type Notification = {
   payload: unknown;
   read: boolean;
   created_at: string;
+};
+
+export type ReaderWallet = {
+  id: string;
+  reader_id: string;
+  eoa_address: string;
+  key_enc: string | null;
+  circle_wallet_id: string | null;
+  usdc_deposited: string;  // 6-dec base units
+  usdc_spent: string;      // 6-dec base units
+  gateway_funded: boolean;
+  created_at: string;
+  last_seen_at: string;
 };
 
 // --- Job payload types (CLAUDE.md §Queue interface) ---

@@ -1,12 +1,11 @@
 /**
- * app/piece/[id]/page.tsx — M4 reader page.
+ * app/piece/[id]/page.tsx — M4 reader page (updated M-C5/M-C6).
  *
- * Server component: fetches piece metadata (title, current_price) from DB.
+ * Server component: fetches piece metadata (title, current_price, kind) from DB.
  * Renders title + price ticker + UnlockButton (client component).
- * After unlock: UnlockButton shows the piece body + Arc explorer link inline.
+ * After unlock: UnlockButton renders HTML body (sanitized) or <video> for video pieces.
  *
- * The piece body is NOT returned here — it only arrives after the x402 payment
- * settles. This page intentionally shows only metadata before payment.
+ * Piece body NOT returned here — only arrives after x402 payment settles.
  */
 
 import { notFound } from "next/navigation";
@@ -39,7 +38,8 @@ export default async function PiecePage({ params }: PageProps) {
     id,
     title: "Mock Article: The Quiet Collapse of Attention",
     current_price: "1000",
-    body: "Mock body — this will be shown after payment in real mode.",
+    kind: "article" as const,
+    body: "<p>Mock body — this will be shown after payment in real mode.</p>",
     status: "listed" as const,
   };
 
@@ -53,6 +53,7 @@ export default async function PiecePage({ params }: PageProps) {
     USDC_ERC20_DECIMALS
   );
   const priceDisplay = toDisplay(standingPrice);
+  const isVideo = (displayPiece as { kind?: string }).kind === "video";
 
   return (
     <main className="min-h-screen bg-background text-foreground pb-20">
@@ -112,7 +113,7 @@ export default async function PiecePage({ params }: PageProps) {
             className="inline-block w-1 h-1 rounded-full"
             style={{ background: "var(--c-accent)" }}
           />
-          402 · x402 payment required
+          {isVideo ? "402 · video locked" : "402 · x402 payment required"}
         </div>
 
         {/* Title */}
@@ -125,7 +126,7 @@ export default async function PiecePage({ params }: PageProps) {
 
         {/* Meta */}
         <p className="font-sans text-[15px] text-muted-foreground mb-10">
-          Unlock for {priceDisplay} · settled instantly on Arc via Circle Gateway
+          {isVideo ? "Unlock to watch" : "Unlock to read"} · {priceDisplay} · settled instantly on Arc via Circle Gateway
         </p>
 
         {/* Paywall / content area */}
@@ -146,19 +147,39 @@ export default async function PiecePage({ params }: PageProps) {
           />
 
           <div className="relative z-10">
-            {/* Teaser text lines */}
+            {/* Pre-unlock teaser */}
             <div className="mb-8">
-              {[100, 96, 88, 100, 72].map((w, i) => (
+              {isVideo ? (
+                // Video placeholder with padlock icon
                 <div
-                  key={i}
-                  className="h-2.5 rounded mb-2.5"
+                  className="flex flex-col items-center justify-center rounded-xl gap-3"
                   style={{
-                    background: "var(--c-border)",
-                    width: `${w}%`,
-                    opacity: 0.5 - i * 0.06,
+                    background: "rgba(0,0,0,0.45)",
+                    height: "180px",
+                    border: "1px solid var(--c-border)",
                   }}
-                />
-              ))}
+                >
+                  <div className="text-4xl" style={{ filter: "drop-shadow(0 0 12px rgba(255,255,255,0.2))" }}>
+                    🎬🔒
+                  </div>
+                  <span className="font-mono text-xs tracking-wider" style={{ color: "var(--c-muted)" }}>
+                    video locked
+                  </span>
+                </div>
+              ) : (
+                // Article skeleton bars
+                [100, 96, 88, 100, 72].map((w, i) => (
+                  <div
+                    key={i}
+                    className="h-2.5 rounded mb-2.5"
+                    style={{
+                      background: "var(--c-border)",
+                      width: `${w}%`,
+                      opacity: 0.5 - i * 0.06,
+                    }}
+                  />
+                ))
+              )}
             </div>
 
             {/* Unlock CTA */}
@@ -167,10 +188,10 @@ export default async function PiecePage({ params }: PageProps) {
                 className="font-mono text-xs tracking-widest uppercase mb-1"
                 style={{ color: "var(--c-dim)" }}
               >
-                HTTP 402 · locked
+                {isVideo ? "HTTP 402 · video locked" : "HTTP 402 · locked"}
               </div>
 
-              <UnlockButton pieceId={id} priceDisplay={priceDisplay} />
+              <UnlockButton pieceId={id} priceDisplay={priceDisplay} isVideo={isVideo} />
 
               <p
                 className="font-sans text-sm max-w-xs leading-snug"

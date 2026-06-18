@@ -1,6 +1,6 @@
 // lib/repo/notifications.ts
 import { SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import type { Notification } from './types.js';
+import type { Notification } from './types';
 
 export async function createNotification(
   db: SupabaseClient,

@@ -1,6 +1,6 @@
 // lib/repo/disputes.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Dispute } from './types.js';
+import type { Dispute } from './types';
 
 export async function createDispute(
   db: SupabaseClient,

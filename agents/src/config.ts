@@ -38,6 +38,15 @@ export const ARC_RPC_URL: string = getEnv('ARC_RPC_URL') ?? '';
 export const SELLER_ADDRESS: string = getEnv('SELLER_ADDRESS') ?? '';
 export const SELLER_PRIVATE_KEY: string = getEnv('SELLER_PRIVATE_KEY') ?? '';
 
+// Circle developer-controlled wallets (optional — keep-in-sync: Cresc/lib/config.ts)
+export const CIRCLE_API_KEY: string = getEnv('CIRCLE_API_KEY') ?? '';
+export const ENTITY_SECRET: string = getEnv('ENTITY_SECRET') ?? '';
+export const CIRCLE_WALLET_SET_ID: string = getEnv('CIRCLE_WALLET_SET_ID') ?? '';
+export const CIRCLE_SELLER_WALLET_ID: string = getEnv('CIRCLE_SELLER_WALLET_ID') ?? '';
+export const CIRCLE_SELLER_WALLET_ADDRESS: string = getEnv('CIRCLE_SELLER_WALLET_ADDRESS') ?? '';
+export const CIRCLE_BUYER_WALLET_ID: string = getEnv('CIRCLE_BUYER_WALLET_ID') ?? '';
+export const CIRCLE_BUYER_WALLET_ADDRESS: string = getEnv('CIRCLE_BUYER_WALLET_ADDRESS') ?? '';
+
 export const LLM_API_KEY: string = getEnv('LLM_API_KEY') ?? '';
 export const LLM_BASE_URL: string = getEnv('LLM_BASE_URL') ?? 'https://api.groq.com/openai/v1';
 export const LLM_MODEL: string = getEnv('LLM_MODEL') ?? 'llama-3.3-70b-versatile';
@@ -52,8 +61,14 @@ if (PRICE_FLOOR_MIN < 0.000001) throw new Error('[config] PRICE_FLOOR_MIN must b
 if (PRICE_FLOOR_MIN >= PRICE_CEILING) throw new Error('[config] PRICE_FLOOR_MIN must be < PRICE_CEILING');
 
 export function validateAgentConfig(): void {
-  requireEnv('SUPABASE_URL');
-  requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+  if (!SUPABASE_URL) throw new Error('[config] Missing required env var: SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)');
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error('[config] Missing required env var: SUPABASE_SERVICE_ROLE_KEY');
+  if (!ARC_RPC_URL) throw new Error('[config] Missing required env var: ARC_RPC_URL');
+  if (!SELLER_ADDRESS) throw new Error('[config] Missing required env var: SELLER_ADDRESS');
+  const isCircleMode = !!(CIRCLE_API_KEY && ENTITY_SECRET);
+  if (!isCircleMode && !SELLER_PRIVATE_KEY) {
+    throw new Error('[config] Missing SELLER_PRIVATE_KEY (required when not using Circle developer-controlled wallets)');
+  }
   if (!isMockMode) {
     requireEnv('LLM_API_KEY');
   }

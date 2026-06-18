@@ -1,9 +1,9 @@
 // lib/repo/signals.ts — getSignalBundle: recency-weighted stats for PricingAgent (M5 input).
 // Uses raw Supabase RPC for efficient multi-window aggregation.
 import { SupabaseClient } from '@supabase/supabase-js';
-import { USDC_ERC20_DECIMALS } from '../config.js';
-import { fromBaseUnits, toDisplay } from '../money.js';
-import type { SignalBundle, WindowStats } from './types.js';
+import { USDC_ERC20_DECIMALS } from '../config';
+import { fromBaseUnits, toDisplay } from '../money';
+import type { SignalBundle, WindowStats } from './types';
 
 // Interval strings for the three recency windows
 const WINDOWS = { '1h': '1 hour', '24h': '24 hours', '7d': '7 days' } as const;

@@ -34,7 +34,11 @@ import {
   ARC_EXPLORER_BASE,
   ARC_RPC_URL,
   SELLER_PRIVATE_KEY,
+  CIRCLE_BUYER_WALLET_ID,
+  CIRCLE_BUYER_WALLET_ADDRESS,
+  CIRCLE_SELLER_WALLET_ID,
 } from "../config";
+import { isCircleWalletMode, makeCircleSigner, getCircleWalletBalance } from "./wallets";
 
 // --- Public types (no SDK leaks past this barrel) ---
 
@@ -65,7 +69,8 @@ export type PaymentResult = {
 
 // --- Internal helpers ---
 
-const isMockCircle = !ARC_RPC_URL || !SELLER_PRIVATE_KEY;
+// Mock only when no RPC AND no Circle wallet mode — raw key is optional when Circle manages keys.
+const isMockCircle = !ARC_RPC_URL || (!SELLER_PRIVATE_KEY && !isCircleWalletMode);
 
 // Arc Testnet chain definition for viem (rpcUrls default is overridden per-client via transport).
 const arcTestnetChain = defineChain({
@@ -184,10 +189,17 @@ export async function getGatewayBalance(address: string): Promise<{
       withdrawing: { value: 0n, decimals: 6 },
     };
   }
+  // Circle wallet mode: no raw seller key — read Circle-managed wallet balance as proxy.
+  if (isCircleWalletMode && !SELLER_PRIVATE_KEY) {
+    const balance = CIRCLE_SELLER_WALLET_ID
+      ? await getCircleWalletBalance(CIRCLE_SELLER_WALLET_ID)
+      : { value: 0n, decimals: 6 };
+    return { total: balance, withdrawable: balance, withdrawing: { value: 0n, decimals: 6 } };
+  }
   const client = makeGatewayClient(SELLER_PRIVATE_KEY);
   const balances = await client.getBalances(address as `0x${string}`);
   const { total, withdrawable, withdrawing } = balances.gateway;
-  const dec = 6; // Gateway balance bigints are 6-dec USDC (§4.2)
+  const dec = 6;
   return {
     total: { value: total, decimals: dec },
     withdrawable: { value: withdrawable, decimals: dec },
@@ -246,7 +258,9 @@ export async function verifyAndSettle(
 
 /**
  * Sign an EIP-3009 payment authorization (buyer side).
- * Uses BatchEvmScheme which signs against GatewayWallet (not USDC contract) per x402 batch spec.
+ * When CIRCLE_BUYER_WALLET_ID is configured, uses Circle MPC signTypedData (no raw key needed).
+ * Falls back to viem privateKeyToAccount with the raw privKey param.
+ * BatchEvmScheme handles building the EIP-712 typed data and calling signer.signTypedData.
  */
 export async function signPaymentAuthorization(
   privKey: string,
@@ -268,18 +282,30 @@ export async function signPaymentAuthorization(
       },
     };
   }
-  const account = privateKeyToAccount(privKey as `0x${string}`);
-  const walletClient = createWalletClient({
-    account,
-    chain: arcTestnetChain,
-    transport: http(requireRpc()),
-  });
-  // BatchEvmSigner-compatible wrapper (structural typing — no import of internal type needed)
-  const signer = {
-    address: account.address,
-    signTypedData: (params: Parameters<typeof walletClient.signTypedData>[0]) =>
-      walletClient.signTypedData(params),
-  };
+
+  let signer: { address: `0x${string}`; signTypedData: (...args: unknown[]) => Promise<`0x${string}`> };
+
+  if (isCircleWalletMode && CIRCLE_BUYER_WALLET_ID && CIRCLE_BUYER_WALLET_ADDRESS) {
+    // Circle developer-controlled wallet path: MPC signing via Circle API (no raw key).
+    signer = makeCircleSigner(
+      CIRCLE_BUYER_WALLET_ID,
+      CIRCLE_BUYER_WALLET_ADDRESS as `0x${string}`
+    ) as typeof signer;
+  } else {
+    // Raw EOA key fallback (generate-wallets or manual config).
+    const account = privateKeyToAccount(privKey as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain: arcTestnetChain,
+      transport: http(requireRpc()),
+    });
+    signer = {
+      address: account.address,
+      signTypedData: (params: Parameters<typeof walletClient.signTypedData>[0]) =>
+        walletClient.signTypedData(params),
+    } as typeof signer;
+  }
+
   const scheme = new BatchEvmScheme(signer);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const payload = await scheme.createPaymentPayload(2, requirements as any);
@@ -297,6 +323,9 @@ export async function withdrawFromGateway(
   amount: UsdcAmount
 ): Promise<TxRef> {
   if (isMockCircle) return { ...MOCK_TX, chain };
+  if (isCircleWalletMode && !privKey) {
+    throw new Error("Withdrawals for Circle-managed wallets must be done via the Circle console — no raw key available.");
+  }
   const client = makeGatewayClient(privKey);
   const formatted = formatUnits(amount.value, amount.decimals);
   const result = await client.withdraw(formatted, {

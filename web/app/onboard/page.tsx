@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount, useChainId } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+
+const ARC_TESTNET_CHAIN_ID = 5042002;
 
 type Step = "form" | "submitting" | "done";
 
@@ -37,6 +41,9 @@ const PLATFORMS = [
 
 export default function OnboardPage() {
   const router = useRouter();
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+
   const [step, setStep] = useState<Step>("form");
   const [page, setPage] = useState<1 | 2>(1);
 
@@ -46,9 +53,11 @@ export default function OnboardPage() {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [customPlatform, setCustomPlatform] = useState("");
 
-  const [wallet, setWallet] = useState("");
   const [error, setError] = useState("");
   const [creatorId, setCreatorId] = useState("");
+
+  const onWrongChain = isConnected && chainId !== ARC_TESTNET_CHAIN_ID;
+  const canSubmit = isConnected && !onWrongChain && !!address;
 
   function toggleContentType(id: string) {
     setSelectedContentTypes((prev) =>
@@ -71,7 +80,7 @@ export default function OnboardPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!wallet.trim()) { setError("Wallet address required."); return; }
+    if (!canSubmit || !address) { setError("Connect MetaMask on Arc Testnet first."); return; }
     setError("");
     setStep("submitting");
 
@@ -85,7 +94,7 @@ export default function OnboardPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         display_name: name.trim(),
-        wallet_address: wallet.trim().toLowerCase(),
+        wallet_address: address.toLowerCase(),
         _meta: { bio: bio.trim(), content_types: selectedContentTypes, platforms: allPlatforms },
       }),
     });
@@ -99,7 +108,7 @@ export default function OnboardPage() {
 
     setCreatorId(data.creator.id);
     localStorage.setItem("cresc_creator_id", data.creator.id);
-    localStorage.setItem("cresc_wallet", wallet.trim().toLowerCase());
+    localStorage.setItem("cresc_wallet", address.toLowerCase());
     setStep("done");
   }
 
@@ -266,35 +275,47 @@ export default function OnboardPage() {
             </button>
             <h1 className="font-heading text-2xl font-bold text-foreground">Connect your wallet</h1>
             <p className="text-muted-foreground text-sm mt-2.5 leading-relaxed">
-              This EOA wallet receives nanopayments on Arc Testnet — fractions of a cent per read,
+              Your MetaMask EOA receives nanopayments on Arc Testnet — fractions of a cent per read,
               settled instantly by Circle Gateway.
             </p>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4.5 mt-7">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="wallet" className="text-foreground">Wallet address</Label>
-                <Input
-                  id="wallet"
-                  type="text"
-                  placeholder="0x…"
-                  value={wallet}
-                  onChange={(e) => setWallet(e.target.value)}
-                  spellCheck={false}
-                  autoFocus
-                  className="h-10 text-sm font-mono"
-                />
-                <span className="text-xs text-muted-foreground opacity-50">
-                  Need one? Run{" "}
-                  <code
-                    className="font-mono text-xs rounded px-1 py-0.5"
-                    style={{ background: "rgba(255,255,255,0.06)" }}
-                  >
-                    npx tsx scripts/generate-wallets.mts
-                  </code>{" "}
-                  in the Cresc directory.
-                </span>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-5 mt-7">
+              {/* RainbowKit connect button */}
+              <div className="flex flex-col gap-3">
+                <Label className="text-foreground">Wallet</Label>
+                <ConnectButton />
               </div>
 
+              {/* Connected address display */}
+              {isConnected && address && (
+                <div
+                  className="flex items-center gap-2 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--c-border)" }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: onWrongChain ? "var(--c-red)" : "#4ade80" }}
+                  />
+                  <span className="font-mono text-xs text-muted-foreground truncate">{address}</span>
+                </div>
+              )}
+
+              {/* Wrong chain warning */}
+              {onWrongChain && (
+                <div
+                  className="text-sm px-3.5 py-2.5 rounded-lg"
+                  style={{
+                    color: "#f59e0b",
+                    background: "rgba(245,158,11,0.08)",
+                    border: "1px solid rgba(245,158,11,0.22)",
+                  }}
+                >
+                  Switch to <strong>Arc Testnet</strong> (chain ID 5042002) in MetaMask to continue.
+                  RainbowKit will prompt you automatically — click "Switch network" above.
+                </div>
+              )}
+
+              {/* Faucet + deposit note */}
               <div
                 className="px-4 py-3.5 rounded-xl"
                 style={{
@@ -303,8 +324,8 @@ export default function OnboardPage() {
                 }}
               >
                 <p className="text-muted-foreground text-xs leading-relaxed m-0">
-                  <strong className="text-foreground">Testnet only.</strong>{" "}
-                  This wallet receives Arc Testnet USDC. Get free test USDC at{" "}
+                  <strong className="text-foreground">Need testnet USDC?</strong>{" "}
+                  Get free USDC at{" "}
                   <a
                     href="https://faucet.circle.com"
                     target="_blank"
@@ -312,8 +333,9 @@ export default function OnboardPage() {
                     style={{ color: "var(--c-accent)" }}
                   >
                     faucet.circle.com
-                  </a>
-                  . No real funds are ever at risk.
+                  </a>{" "}
+                  (select Arc Testnet). Then deposit into Circle Gateway once — readers pay you via
+                  gasless x402 nanopayments after that. No real funds at risk.
                 </p>
               </div>
 
@@ -332,10 +354,16 @@ export default function OnboardPage() {
 
               <Button
                 type="submit"
-                disabled={step === "submitting"}
+                disabled={!canSubmit || step === "submitting"}
                 className="mt-1 h-11 font-bold text-sm"
               >
-                {step === "submitting" ? "Creating account…" : "Create account →"}
+                {step === "submitting"
+                  ? "Creating account…"
+                  : !isConnected
+                  ? "Connect wallet to continue"
+                  : onWrongChain
+                  ? "Switch to Arc Testnet"
+                  : "Create account →"}
               </Button>
             </form>
           </>

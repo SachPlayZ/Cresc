@@ -2,12 +2,7 @@
 // Long-running Node.js worker service: consumes jobs queue, dispatches to workers.
 // No HTTP server — DB only. (CLAUDE.md §0.5)
 
-import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-const __dir = dirname(fileURLToPath(import.meta.url));
-// Load from monorepo root: agents/src/ → agents/ → root .env.local
-config({ path: resolve(__dir, '../../.env.local') });
+// Env: loaded from process.env (Railway injects vars; local dev uses tsx --env-file=../.env.local).
 import { validateAgentConfig } from './config.js';
 import { createServerClient } from './db.js';
 import { startConsumer, registerWorker } from './queue/consumer.js';

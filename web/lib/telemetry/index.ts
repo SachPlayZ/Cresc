@@ -18,8 +18,8 @@ import {
   getLastHeartbeat,
   endSession,
   enqueueJob,
-} from "../repo/index.js";
-import { SESSION_END_TIMEOUT_SECONDS } from "../config.js";
+} from "../repo/index";
+import { SESSION_END_TIMEOUT_SECONDS } from "../config";
 
 /**
  * detectSessionEnd — sweep open sessions and end those whose heartbeat has timed out.

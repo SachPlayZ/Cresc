@@ -69,6 +69,20 @@ export const SELLER_PRIVATE_KEY: string = getEnv("SELLER_PRIVATE_KEY") ?? "";
 export const BUYER_ADDRESS: string = getEnv("BUYER_ADDRESS") ?? "";
 export const BUYER_PRIVATE_KEY: string = getEnv("BUYER_PRIVATE_KEY") ?? "";
 
+// --- Circle developer-controlled wallets (optional upgrade — replaces raw EOA keys) ---
+// When CIRCLE_API_KEY + ENTITY_SECRET are set, signPaymentAuthorization uses Circle MPC
+// signing (signTypedData) instead of viem's privateKeyToAccount. Raw EOA key path is the
+// fallback. See lib/circle/wallets.ts.
+export const CIRCLE_API_KEY: string = getEnv("CIRCLE_API_KEY") ?? "";
+export const ENTITY_SECRET: string = getEnv("ENTITY_SECRET") ?? "";
+export const CIRCLE_WALLET_SET_ID: string = getEnv("CIRCLE_WALLET_SET_ID") ?? "";
+// Circle-managed buyer wallet (payer for reader unlocks / tips)
+export const CIRCLE_BUYER_WALLET_ID: string = getEnv("CIRCLE_BUYER_WALLET_ID") ?? "";
+export const CIRCLE_BUYER_WALLET_ADDRESS: string = getEnv("CIRCLE_BUYER_WALLET_ADDRESS") ?? "";
+// Circle-managed seller wallet (recipient for creator payouts)
+export const CIRCLE_SELLER_WALLET_ID: string = getEnv("CIRCLE_SELLER_WALLET_ID") ?? "";
+export const CIRCLE_SELLER_WALLET_ADDRESS: string = getEnv("CIRCLE_SELLER_WALLET_ADDRESS") ?? "";
+
 // --- LLM (Groq via OpenAI-compatible API) ---
 export const LLM_API_KEY: string = getEnv("LLM_API_KEY") ?? "";
 export const LLM_BASE_URL: string =
@@ -120,6 +134,10 @@ export function validatePaymentConfig(): void {
   requireEnv("BUYER_ADDRESS", "payment sending");
   requireEnv("BUYER_PRIVATE_KEY", "payment signing");
 }
+
+// --- Reader wallet encryption (raw EOA path) ---
+// 32 random bytes, hex-encoded. Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+export const READER_KEY_SECRET: string = getEnv("READER_KEY_SECRET") ?? "";
 
 // Frozen chain config object for convenience
 export const chainConfig = {

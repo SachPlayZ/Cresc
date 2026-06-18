@@ -2,22 +2,23 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAccount, useSignMessage } from "wagmi";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { RichEditor, countWordsInHtml } from "@/components/RichEditor";
 
 type Step = "form" | "submitting" | "done";
 
-const WORD_ESTIMATE = (text: string) =>
-  Math.round(text.trim().split(/\s+/).filter(Boolean).length);
-
 export default function CreatePage() {
   const router = useRouter();
+  const { isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
   const [step, setStep] = useState<Step>("form");
   const [creatorId, setCreatorId] = useState("");
   const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [bodyHtml, setBodyHtml] = useState("");
   const [objective, setObjective] = useState<"MAX_REVENUE" | "MAX_REACH">("MAX_REACH");
   const [error, setError] = useState("");
   const [pieceId, setPieceId] = useState("");
@@ -31,14 +32,38 @@ export default function CreatePage() {
   async function handlePublish(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) { setError("Title required."); return; }
-    if (body.trim().length < 100) { setError("Body must be at least 100 characters."); return; }
+
+    const plainText = bodyHtml.replace(/<[^>]+>/g, " ").trim();
+    if (plainText.length < 100) { setError("Body must be at least 100 characters."); return; }
     setError("");
     setStep("submitting");
+
+    const kind: "article" | "video" = bodyHtml.includes("<video") ? "video" : "article";
+
+    // M-C7: sign a timestamped challenge to prove wallet ownership before publishing.
+    // If wallet not connected (dev/mock), proceed without signature — API allows it.
+    let signature: string | undefined;
+    let timestamp: string | undefined;
+    if (isConnected) {
+      try {
+        timestamp = Date.now().toString();
+        signature = await signMessageAsync({ message: `cresc:create:${timestamp}` });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.toLowerCase().includes("user rejected") || msg.toLowerCase().includes("denied")) {
+          setError("Signature rejected. Please approve the MetaMask prompt to publish.");
+        } else {
+          setError("Wallet signing failed. Try again.");
+        }
+        setStep("form");
+        return;
+      }
+    }
 
     const res = await fetch("/api/piece/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ creator_id: creatorId, title: title.trim(), body: body.trim(), objective }),
+      body: JSON.stringify({ creator_id: creatorId, title: title.trim(), body: bodyHtml, kind, objective, signature, timestamp }),
     });
     const data = await res.json() as { piece?: { id: string }; error?: string };
 
@@ -71,7 +96,7 @@ export default function CreatePage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => { setStep("form"); setTitle(""); setBody(""); setPieceId(""); }}
+              onClick={() => { setStep("form"); setTitle(""); setBodyHtml(""); setPieceId(""); }}
             >
               Publish another
             </Button>
@@ -88,12 +113,12 @@ export default function CreatePage() {
     );
   }
 
-  const wordCount = WORD_ESTIMATE(body);
+  const wordCount = countWordsInHtml(bodyHtml);
   const readMin = Math.max(1, Math.round(wordCount / 200));
 
   return (
     <main className="min-h-screen flex items-center justify-center p-6 bg-background">
-      <div className="bg-card border border-border rounded-2xl p-10 w-full max-w-2xl">
+      <div className="bg-card border border-border rounded-2xl p-10 w-full max-w-3xl">
         {/* Header */}
         <div className="mb-1">
           <span
@@ -108,6 +133,23 @@ export default function CreatePage() {
           Write or paste your content. The AI pricing agent sets the opening rate at $0.005 and
           adjusts autonomously from there based on reader engagement.
         </p>
+
+        {/* M-C7: wallet connect gate */}
+        {!isConnected && (
+          <div
+            className="flex flex-col gap-3 mt-6 p-4 rounded-xl border"
+            style={{
+              background: "rgba(155,134,255,0.05)",
+              border: "1px solid rgba(155,134,255,0.2)",
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              Connect your wallet to verify ownership before publishing. MetaMask will ask you to
+              sign a short message — no gas, no transaction.
+            </p>
+            <ConnectButton />
+          </div>
+        )}
 
         <form onSubmit={handlePublish} className="flex flex-col gap-5 mt-7">
           {/* Title */}
@@ -125,20 +167,20 @@ export default function CreatePage() {
             />
           </div>
 
-          {/* Body */}
+          {/* Rich text body */}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="body" className="text-foreground">Body</Label>
-            <Textarea
-              id="body"
+            <Label className="text-foreground">Body</Label>
+            <RichEditor
               placeholder="Write your piece here… (min 100 characters)"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={setBodyHtml}
               disabled={step === "submitting"}
-              className="min-h-64 resize-y leading-relaxed font-sans text-sm"
             />
-            {body.length > 0 && (
+            {wordCount > 0 && (
               <span className="text-xs text-muted-foreground">
-                {wordCount} words · ~{readMin} min read · {body.length} chars
+                {wordCount} words · ~{readMin} min read
+                {bodyHtml.includes("<video") && (
+                  <span className="ml-2 font-mono" style={{ color: "var(--c-violet)" }}>· video</span>
+                )}
               </span>
             )}
           </div>
@@ -195,7 +237,7 @@ export default function CreatePage() {
             className="mt-1 h-11 text-sm font-bold"
             style={{ boxShadow: "0 0 24px rgba(198,248,78,0.25)" }}
           >
-            {step === "submitting" ? "Publishing…" : "Publish →"}
+            {step === "submitting" ? "Publishing…" : isConnected ? "Sign & Publish →" : "Publish →"}
           </Button>
         </form>
       </div>

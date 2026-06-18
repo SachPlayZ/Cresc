@@ -1,6 +1,6 @@
 // lib/repo/tip_decisions.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { TipDecision } from './types.js';
+import type { TipDecision } from './types';
 
 export async function createTipDecision(
   db: SupabaseClient,

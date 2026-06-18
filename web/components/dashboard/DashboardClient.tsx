@@ -101,7 +101,7 @@ export default function DashboardClient({
     error: null,
   });
 
-  // Withdraw dialog
+  // Withdraw dialog (platform operator tool)
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawTo, setWithdrawTo] = useState(creator.wallet_address);
@@ -109,6 +109,14 @@ export default function DashboardClient({
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawResult, setWithdrawResult] = useState<{ txHash: string; explorerUrl: string } | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
+  // Creator payout state
+  const [payoutState, setPayoutState] = useState<
+    | { status: "idle" }
+    | { status: "paying" }
+    | { status: "done"; txHash: string; explorerUrl: string; amount: string }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
 
   // Fetch gateway balance
   const fetchBalance = useCallback(async () => {
@@ -204,6 +212,26 @@ export default function DashboardClient({
     }
   };
 
+  // Payout handler
+  const handlePayout = async () => {
+    setPayoutState({ status: "paying" });
+    try {
+      const res = await fetch("/api/payout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creatorId: creator.id }),
+      });
+      const data = await res.json() as { txHash?: string; explorerUrl?: string; amountDisplay?: string; error?: string };
+      if (!res.ok) {
+        setPayoutState({ status: "error", message: data.error ?? "Payout failed" });
+        return;
+      }
+      setPayoutState({ status: "done", txHash: data.txHash!, explorerUrl: data.explorerUrl!, amount: data.amountDisplay! });
+    } catch (err) {
+      setPayoutState({ status: "error", message: err instanceof Error ? err.message : "Unknown error" });
+    }
+  };
+
   // Aggregate stats
   const allPayments = Object.values(paymentsByPiece).flat();
   const allDecisions = Object.values(decisionsByPiece).flat();
@@ -211,6 +239,15 @@ export default function DashboardClient({
   const uniqueReaders = uniquePayers(allPayments.filter((p) => p.kind === "unlock"));
   const listedCount = pieces.filter((p) => p.status === "listed").length;
   const totalDecisions = allDecisions.length;
+
+  // Compute unpaid earnings from state (settled + no payout_ref)
+  const totalUnpaid: bigint = allPayments.reduce((sum, p) => {
+    if (p.status === "settled" && !p.payout_ref) return sum + BigInt(p.amount);
+    return sum;
+  }, 0n);
+  const unpaidDisplay = payoutState.status === "done"
+    ? "$0"
+    : toDisplay(fromBaseUnits(totalUnpaid, USDC_ERC20_DECIMALS));
 
   const selectedPiece = pieces.find((p) => p.id === selectedId) ?? null;
   const selectedDecisions = selectedId ? (decisionsByPiece[selectedId] ?? []) : [];
@@ -325,8 +362,61 @@ export default function DashboardClient({
             variant="outline"
             size="sm"
           >
-            Withdraw
+            Platform withdraw
           </Button>
+        </div>
+
+        {/* Creator earnings payout */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, borderLeft: "1px solid var(--c-border, #2a2740)", paddingLeft: 16 }}>
+          {payoutState.status === "done" ? (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 11, color: "var(--c-green, #22c55e)", marginBottom: 2 }}>
+                {payoutState.amount} sent ✓
+              </div>
+              <div style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 11, color: "var(--c-dim, #666)" }}>
+                {payoutState.txHash.slice(0, 8)}…{payoutState.txHash.slice(-6)}
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 11, color: "var(--c-dim, #666)", marginBottom: 2 }}>
+                unpaid earnings
+              </div>
+              <div style={{ fontFamily: "var(--font-jetbrains), monospace", fontWeight: 600, fontSize: 18, color: "var(--c-text, #e8e6f0)" }}>
+                {unpaidDisplay}
+              </div>
+            </div>
+          )}
+
+          {payoutState.status === "done" ? (
+            <a
+              href={payoutState.explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 12, color: "var(--c-violet, #7c3aed)", textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              View on Arc ↗
+            </a>
+          ) : (
+            <Button
+              onClick={handlePayout}
+              disabled={payoutState.status === "paying" || totalUnpaid === 0n}
+              size="sm"
+              style={{ background: payoutState.status === "error" ? "var(--c-red, #ef4444)" : undefined, whiteSpace: "nowrap" }}
+            >
+              {payoutState.status === "paying"
+                ? "Sending…"
+                : payoutState.status === "error"
+                ? "Retry payout"
+                : "Withdraw to wallet →"}
+            </Button>
+          )}
+
+          {payoutState.status === "error" && (
+            <div style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 11, color: "var(--c-red, #ef4444)", maxWidth: 180 }}>
+              {payoutState.message}
+            </div>
+          )}
         </div>
       </div>
 

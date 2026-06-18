@@ -1,6 +1,6 @@
 // lib/repo/sessions.ts
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Session } from './types.js';
+import type { Session } from './types';
 
 export async function getSession(db: SupabaseClient, id: string): Promise<Session | null> {
   const { data, error } = await db.from('sessions').select('*').eq('id', id).single();
