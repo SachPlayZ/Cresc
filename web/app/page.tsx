@@ -1069,37 +1069,6 @@ export default function Home() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 32,
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          <a
-            href="#how"
-            className="cresc-nav-link"
-            style={{ color: "var(--c-muted)", textDecoration: "none" }}
-          >
-            How it works
-          </a>
-          <a
-            href="#creators"
-            className="cresc-nav-link"
-            style={{ color: "var(--c-muted)", textDecoration: "none" }}
-          >
-            For Creators
-          </a>
-          <a
-            href="#docs"
-            className="cresc-nav-link"
-            style={{ color: "var(--c-muted)", textDecoration: "none" }}
-          >
-            Docs
-          </a>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
             gap: 14,
             fontSize: 14,
             fontWeight: 600,
