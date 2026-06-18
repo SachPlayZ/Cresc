@@ -14,8 +14,27 @@ import { USDC_ERC20_DECIMALS } from "../../lib/config";
 import { createBrowserClient } from "../../lib/db";
 import LiveTicker from "./LiveTicker";
 import ReasoningChain from "./ReasoningChain";
-import PriceChart from "./PriceChart";
 import ListDelistControl from "./ListDelistControl";
+import dynamic from "next/dynamic";
+
+const PriceChart = dynamic(() => import("./PriceChart"), {
+  ssr: false,
+  loading: () => (
+    <div
+      style={{
+        height: 260,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--c-dim, #666)",
+        fontFamily: "var(--font-jetbrains), monospace",
+        fontSize: 13,
+      }}
+    >
+      Loading chart...
+    </div>
+  ),
+});
 import {
   Dialog,
   DialogContent,
