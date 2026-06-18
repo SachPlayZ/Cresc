@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount } from "wagmi";
 import Link from "next/link";
 
 type Theme = "dark" | "light";
@@ -114,191 +115,611 @@ function colorFor(dir: number) {
     : "var(--c-amber)";
 }
 
-function ContentPreview({ type }: { type: DemoType }) {
-  const t = TYPES[type];
-  const stripes: React.CSSProperties = {
-    backgroundColor: "var(--c-surface-2)",
-    backgroundImage:
-      "repeating-linear-gradient(135deg, var(--c-border-soft) 0, var(--c-border-soft) 1px, transparent 1px, transparent 13px)",
-  };
-
-  let body: React.ReactNode;
-  if (type === "article") {
-    const line = (w: string, o: number) => (
-      <div
+const PadlockSVG = ({ open }: { open: boolean }) => {
+  return (
+    <svg width="48" height="54" viewBox="0 0 48 54" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M14 20V14C14 8.47715 18.4772 4 24 4C29.5228 4 34 8.47715 34 14V20"
+        stroke="var(--c-accent)"
+        strokeWidth="6"
+        strokeLinecap="round"
         style={{
-          height: 9,
-          borderRadius: 4,
-          background: "var(--c-border)",
-          width: w,
-          opacity: o,
+          transform: open ? "translateY(-6px) rotate(-15deg)" : "none",
+          transformOrigin: "34px 20px",
+          transition: "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
         }}
       />
-    );
-    body = (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          padding: "34px 34px 70px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            height: 15,
-            width: "62%",
-            borderRadius: 5,
-            background: "var(--c-violet)",
-            opacity: 0.6,
-            marginBottom: 10,
-          }}
-        />
-        {line("100%", 0.5)}
-        {line("96%", 0.5)}
-        {line("88%", 0.5)}
-        {line("100%", 0.5)}
-        {line("70%", 0.5)}
-        <div style={{ height: 1 }} />
-        {line("100%", 0.35)}
-        {line("92%", 0.35)}
-        {line("80%", 0.35)}
-      </div>
-    );
-  } else if (type === "video") {
-    body = (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 66,
-            height: 66,
-            borderRadius: "50%",
-            background: "var(--c-accent)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
-          }}
-        >
-          <div
-            style={{
-              width: 0,
-              height: 0,
-              borderTop: "13px solid transparent",
-              borderBottom: "13px solid transparent",
-              borderLeft: "21px solid var(--c-accent-ink)",
-              marginLeft: 5,
-            }}
-          />
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            bottom: 60,
-            right: 22,
-            fontFamily: "var(--font-jetbrains), monospace",
-            fontSize: 11,
-            color: "#fff",
-            background: "rgba(0,0,0,0.5)",
-            padding: "3px 7px",
-            borderRadius: 5,
-          }}
-        >
-          08:00
-        </div>
-      </div>
-    );
-  } else {
-    body = (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div
-          style={{
-            width: 54,
-            height: 54,
-            borderRadius: type === "art" ? "50%" : 10,
-            border: "2px solid var(--c-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transform: type === "art" ? "rotate(45deg)" : "none",
-          }}
-        >
-          <div
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: type === "art" ? 3 : "50%",
-              background: "var(--c-accent)",
-              opacity: 0.8,
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
+      <rect
+        x="6"
+        y="18"
+        width="36"
+        height="30"
+        rx="8"
+        fill="var(--c-accent)"
+      />
+      <circle cx="24" cy="30" r="4" fill="var(--c-accent-ink)" />
+      <path d="M24 34V40" stroke="var(--c-accent-ink)" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+};
 
+const CardView = ({ stage, onClick }: { stage: string; onClick: () => void }) => {
+  const isPressed = stage === "clicking";
   return (
-    <div style={{ position: "absolute", inset: 0, ...stripes }}>
-      {body}
+    <div
+      onClick={onClick}
+      style={{
+        width: "100%",
+        height: "100%",
+        background: "var(--c-surface)",
+        border: "1px solid var(--c-border)",
+        borderRadius: 16,
+        padding: 22,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        cursor: "pointer",
+        position: "relative",
+        boxShadow: "var(--c-shadow-sm)",
+        transform: isPressed ? "scale(0.97)" : "scale(1)",
+        transition: "transform 0.15s ease-out, border-color 0.3s ease",
+        overflow: "hidden",
+      }}
+    >
       <div
         style={{
           position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: 16,
-          background: "linear-gradient(0deg, rgba(0,0,0,0.55), transparent)",
+          inset: 0,
+          background: "linear-gradient(135deg, rgba(155, 134, 255, 0.05) 0%, transparent 100%)",
+          pointerEvents: "none",
         }}
-      >
-        <div
+      />
+      
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 2 }}>
+        <span
           style={{
             fontFamily: "var(--font-jetbrains), monospace",
             fontSize: 10,
+            color: "var(--c-violet)",
             letterSpacing: "0.1em",
-            color: "rgba(255,255,255,0.7)",
-            marginBottom: 3,
+            textTransform: "uppercase",
+            background: "rgba(155, 134, 255, 0.1)",
+            padding: "4px 8px",
+            borderRadius: 6,
           }}
         >
-          {t.medium}
+          Technology
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--c-accent)",
+            }}
+          >
+            $0.0082
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
         </div>
-        <div
+      </div>
+
+      <div style={{ margin: "14px 0", zIndex: 2 }}>
+        <h3
           style={{
             fontFamily: "var(--font-sora), sans-serif",
             fontWeight: 600,
-            fontSize: 16,
-            color: "#fff",
+            fontSize: 19,
+            lineHeight: 1.3,
+            color: "var(--c-text)",
+            margin: "0 0 8px 0",
           }}
         >
-          {t.title}
+          The Quiet Collapse of Attention
+        </h3>
+        <p
+          style={{
+            fontFamily: "var(--font-manrope), sans-serif",
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: "var(--c-muted)",
+            margin: 0,
+          }}
+        >
+          How the modern web became a battlefield for your focus, and how micro-pricing changes the incentives for quality content creators...
+        </p>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 2, marginTop: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: "var(--c-surface-2)",
+              border: "1px solid var(--c-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: "var(--font-sora), sans-serif",
+              fontSize: 11,
+              fontWeight: 600,
+              color: "var(--c-violet)",
+            }}
+          >
+            EV
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--c-text)" }}>Elena Vance</span>
+            <span style={{ fontSize: 10, color: "var(--c-dim)" }}>5 min read</span>
+          </div>
         </div>
+
+        <button
+          className="cresc-btn-accent"
+          style={{
+            background: "var(--c-accent)",
+            color: "var(--c-accent-ink)",
+            fontFamily: "var(--font-manrope), sans-serif",
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "8px 14px",
+            borderRadius: 8,
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: "0 4px 12px rgba(198, 248, 78, 0.2)",
+          }}
+        >
+          Read Full
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      {stage === "clicking" && (
+        <span
+          style={{
+            position: "absolute",
+            top: "76%",
+            left: "81%",
+            width: 50,
+            height: 50,
+            marginLeft: -25,
+            marginTop: -25,
+            borderRadius: "50%",
+            border: "2px solid var(--c-accent)",
+            animation: "cresc-ring 500ms ease-out forwards",
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const ArticleDetailView = ({ stage }: { stage: string }) => {
+  const isBlurred = stage === "opening" || stage === "paying";
+  
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        background: "var(--c-surface)",
+        border: "1px solid var(--c-border)",
+        borderRadius: 16,
+        padding: 22,
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+        boxShadow: "var(--c-shadow-sm)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          filter: isBlurred ? "blur(10px)" : "blur(0px)",
+          transform: isBlurred ? "scale(0.99)" : "scale(1)",
+          transition: "filter 0.7s cubic-bezier(0.25, 0.8, 0.25, 1), transform 0.7s cubic-bezier(0.25, 0.8, 0.25, 1)",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          opacity: 0.95,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 10, color: "var(--c-dim)" }}>
+            ARTICLE · 5 MIN READ
+          </span>
+          <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: 11, color: "var(--c-muted)" }}>
+            Elena Vance
+          </span>
+        </div>
+        
+        <h2
+          style={{
+            fontFamily: "var(--font-sora), sans-serif",
+            fontWeight: 700,
+            fontSize: 20,
+            lineHeight: 1.25,
+            color: "var(--c-text)",
+            margin: "0 0 12px 0",
+          }}
+        >
+          The Quiet Collapse of Attention
+        </h2>
+
         <div
           style={{
             fontFamily: "var(--font-manrope), sans-serif",
-            fontSize: 12,
-            color: "rgba(255,255,255,0.7)",
-            marginTop: 2,
+            fontSize: 13,
+            lineHeight: 1.6,
+            color: "var(--c-muted)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            overflow: "hidden",
           }}
         >
-          {t.meta}
+          <p style={{ margin: 0 }}>
+            We did not evolve to process thousands of fragments of information per hour. The modern attention economy treats human focus as an infinite resource to be mined, packaged, and sold to the highest bidder.
+          </p>
+          <p style={{ margin: 0 }}>
+            By placing a micro-price on attention, we flip the script. Platforms must pay for your time, and creators are compensated directly by automated agents. The web becomes quiet again, structured around quality rather than clicks.
+          </p>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "rgba(21, 16, 31, 0.45)",
+          backdropFilter: "blur(2px)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 16,
+          opacity: isBlurred ? 1 : 0,
+          transform: isBlurred ? "scale(1)" : "scale(1.05)",
+          pointerEvents: isBlurred ? "auto" : "none",
+          transition: "opacity 0.5s ease 0.4s, transform 0.5s ease 0.4s",
+          zIndex: 5,
+        }}
+      >
+        <div style={{ position: "relative" }}>
+          <PadlockSVG open={stage === "unlocked"} />
+          
+          {stage === "unlocked" && (
+            <span
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                width: 120,
+                height: 120,
+                marginLeft: -60,
+                marginTop: -60,
+                borderRadius: "50%",
+                border: "2px solid var(--c-green)",
+                animation: "green-success-pulse 0.8s cubic-bezier(0.1, 0.8, 0.3, 1) forwards",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+
+          {stage === "paying" && (
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                bottom: -35,
+                marginLeft: -8,
+                width: 16,
+                height: 16,
+                borderRadius: "50%",
+                background: "var(--c-accent)",
+                boxShadow: "0 0 12px var(--c-accent)",
+                animation: "coin-fly 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite",
+              }}
+            />
+          )}
+        </div>
+
+        <div
+          style={{
+            fontFamily: "var(--font-jetbrains), monospace",
+            fontSize: 12,
+            letterSpacing: "0.08em",
+            color: stage === "paying" ? "var(--c-amber)" : "var(--c-red)",
+            transition: "color 0.3s ease",
+            textAlign: "center",
+          }}
+        >
+          {stage === "paying" ? "402 · awaiting payment" : "402 · Payment Required"}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "var(--c-surface-hi)",
+            border: "1px solid var(--c-border)",
+            padding: "6px 12px",
+            borderRadius: 999,
+            fontFamily: "var(--font-manrope), sans-serif",
+            fontSize: 12,
+            fontWeight: 600,
+            color: "var(--c-text)",
+            opacity: stage === "paying" ? 1 : 0,
+            transform: stage === "paying" ? "translateY(0)" : "translateY(10px)",
+            transition: "opacity 0.4s ease, transform 0.4s ease",
+          }}
+        >
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "var(--c-violet)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: 8,
+              fontWeight: 700,
+              color: "#fff",
+              animation: "agent-pulse 1.5s infinite",
+            }}
+          >
+            AI
+          </span>
+          Agent paying $0.0082...
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function HeroDemoLoop() {
+  const [stage, setStage] = useState<
+    "browse" | "cursor-moving" | "clicking" | "opening" | "paying" | "unlocked"
+  >("browse");
+
+  useEffect(() => {
+    let active = true;
+    const runLoop = async () => {
+      while (active) {
+        setStage("browse");
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        if (!active) break;
+
+        setStage("cursor-moving");
+        await new Promise((resolve) => setTimeout(resolve, 1400));
+        if (!active) break;
+
+        setStage("clicking");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (!active) break;
+
+        setStage("opening");
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (!active) break;
+
+        setStage("paying");
+        await new Promise((resolve) => setTimeout(resolve, 2200));
+        if (!active) break;
+
+        setStage("unlocked");
+        await new Promise((resolve) => setTimeout(resolve, 4500));
+        if (!active) break;
+      }
+    };
+    runLoop();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  let cursorStyle = {
+    top: "85%",
+    left: "85%",
+    opacity: 0,
+    scale: 1,
+    cursor: "default" as "default" | "pointer",
+  };
+
+  if (stage === "cursor-moving") {
+    cursorStyle = {
+      top: "79%",
+      left: "81%",
+      opacity: 1,
+      scale: 1,
+      cursor: "pointer",
+    };
+  } else if (stage === "clicking") {
+    cursorStyle = {
+      top: "79%",
+      left: "81%",
+      opacity: 1,
+      scale: 0.82,
+      cursor: "pointer",
+    };
+  }
+
+  const showDetail = stage === "opening" || stage === "paying" || stage === "unlocked";
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        height: 380,
+        width: "100%",
+        borderRadius: 20,
+        overflow: "hidden",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes coin-fly {
+          0% {
+            transform: translateY(60px) scale(0.6);
+            opacity: 0;
+          }
+          15% {
+            opacity: 1;
+          }
+          80% {
+            transform: translateY(-70px) scale(1);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(-100px) scale(0.2);
+            opacity: 0;
+          }
+        }
+        @keyframes agent-pulse {
+          0%, 100% { opacity: 0.9; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.05); }
+        }
+        @keyframes green-success-pulse {
+          0% { transform: scale(0.5); opacity: 0.8; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
+      `}} />
+
+      <div
+        style={{
+          position: "absolute",
+          top: cursorStyle.top,
+          left: cursorStyle.left,
+          opacity: cursorStyle.opacity,
+          transform: `scale(${cursorStyle.scale})`,
+          transition: "top 1.2s cubic-bezier(0.22, 1, 0.36, 1), left 1.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease, transform 0.15s ease",
+          pointerEvents: "none",
+          zIndex: 100,
+        }}
+      >
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          style={{ filter: "drop-shadow(0px 2px 4px rgba(0,0,0,0.35))" }}
+        >
+          {cursorStyle.cursor === "pointer" ? (
+            <path
+              d="M12 2v8M12 2a2 2 0 012 2v6M9 6V4a2 2 0 014 0v6M15 8a2 2 0 012 2v2a6 6 0 01-6 6H9a5 5 0 01-5-5V9.5a2 2 0 014 0V10M17 11.5V11a2 2 0 012 2v2a8 8 0 01-8 8H9a7 7 0 01-7-7"
+              stroke="#FFF"
+              strokeWidth="2.5"
+              fill="rgba(21, 16, 31, 0.7)"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : (
+            <path
+              d="M5.5 3.2V20.8L10.3 16L13.8 22.8L16.2 21.6L12.7 14.8H19.5L5.5 3.2Z"
+              fill="#FFF"
+              stroke="#000"
+              strokeWidth="2"
+              strokeLinejoin="round"
+            />
+          )}
+        </svg>
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: showDetail ? 0 : 1,
+          transform: showDetail ? "scale(0.95)" : "scale(1)",
+          transition: "opacity 0.4s ease, transform 0.4s ease",
+          pointerEvents: showDetail ? "none" : "auto",
+        }}
+      >
+        <CardView stage={stage} onClick={() => {}} />
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: showDetail ? 1 : 0,
+          transform: showDetail ? "scale(1)" : "scale(1.05)",
+          transition: "opacity 0.4s ease, transform 0.4s ease",
+          pointerEvents: showDetail ? "auto" : "none",
+        }}
+      >
+        <ArticleDetailView stage={stage} />
+        
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 18px",
+            background: "linear-gradient(0deg, rgba(21,16,31,0.95), rgba(21,16,31,0.75))",
+            borderTop: "1px solid var(--c-border)",
+            opacity: stage === "unlocked" ? 1 : 0,
+            transform: stage === "unlocked" ? "translateY(0)" : "translateY(15px)",
+            transition: "opacity 0.5s ease 0.3s, transform 0.5s ease 0.3s",
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: 12,
+              color: "var(--c-green)",
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "var(--c-green)",
+                display: "inline-block",
+                boxShadow: "0 0 10px var(--c-green)",
+              }}
+            />
+            Unlocked · $0.0082 paid via Arc
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-jetbrains), monospace",
+              fontSize: 11,
+              color: "var(--c-muted)",
+              background: "rgba(255,255,255,0.06)",
+              padding: "3px 8px",
+              borderRadius: 4,
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            200 OK
+          </div>
         </div>
       </div>
     </div>
@@ -306,10 +727,41 @@ function ContentPreview({ type }: { type: DemoType }) {
 }
 
 export default function Home() {
+  const { address, isConnected } = useAccount();
   const [theme, setTheme] = useState<Theme>("dark");
   const [loaded, setLoaded] = useState(false);
-  const [demoType, setDemoType] = useState<DemoType>("photo");
-  const [demoStage, setDemoStage] = useState<DemoStage>("idle");
+  const [creatorId, setCreatorId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setCreatorId(null);
+      return;
+    }
+    const stored = localStorage.getItem("cresc_creator_id");
+    const storedWallet = localStorage.getItem("cresc_wallet");
+    if (stored && storedWallet === address.toLowerCase()) {
+      setCreatorId(stored);
+      return;
+    }
+    fetch(`/api/creator?wallet=${address.toLowerCase()}`)
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error();
+      })
+      .then((data: any) => {
+        if (data && data.creator && data.creator.id) {
+          localStorage.setItem("cresc_creator_id", data.creator.id);
+          localStorage.setItem("cresc_wallet", address.toLowerCase());
+          setCreatorId(data.creator.id);
+        } else {
+          setCreatorId(null);
+        }
+      })
+      .catch(() => {
+        setCreatorId(null);
+      });
+  }, [address, isConnected]);
+
   const [price, setPrice] = useState(0.014);
   const [displayed, setDisplayed] = useState(0.014);
   const [dir, setDir] = useState(0);
@@ -325,7 +777,7 @@ export default function Home() {
 
   const navRef = useRef<HTMLElement>(null);
   const rafRef = useRef<number | null>(null);
-  const demoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
   const priceRef = useRef(price);
   const displayedRef = useRef(displayed);
   priceRef.current = price;
@@ -424,40 +876,8 @@ export default function Home() {
     } catch {}
   };
 
-  const setType = (k: DemoType) => {
-    demoTimersRef.current.forEach(clearTimeout);
-    demoTimersRef.current = [];
-    setDemoType(k);
-    setDemoStage("idle");
-  };
-
-  const onUnlock = () => {
-    demoTimersRef.current.forEach(clearTimeout);
-    demoTimersRef.current = [];
-    setDemoStage("locked");
-    demoTimersRef.current.push(
-      setTimeout(() => setDemoStage("paying"), 560)
-    );
-    demoTimersRef.current.push(
-      setTimeout(() => setDemoStage("settling"), 1560)
-    );
-    demoTimersRef.current.push(
-      setTimeout(() => setDemoStage("unlocked"), 2120)
-    );
-  };
-
-  const t = TYPES[demoType];
-  const open = demoStage === "settling" || demoStage === "unlocked";
-  const showIdle = demoStage === "idle";
-  const showLock =
-    demoStage === "locked" ||
-    demoStage === "paying" ||
-    demoStage === "settling";
-  const showAgent = demoStage === "paying" || demoStage === "settling";
-  const showUnlocked = demoStage === "unlocked";
   const priceStr = `$${displayed.toFixed(4)}`;
   const priceColor = colorFor(dir);
-  const demoPriceStr = `$${t.price.toFixed(4)}`;
 
   const tickerItems = ticker.map((x) => {
     const d = x.p > x.prev ? 1 : x.p < x.prev ? -1 : 0;
@@ -714,32 +1134,82 @@ export default function Home() {
             />
           </button>
           <ConnectButton />
-          <Link href="/history" style={{ display: "inline-flex" }}>
-            <Button
-              className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
-              style={{
-                height: 38,
-                color: "var(--c-text)",
-                border: "1px solid var(--c-border)",
-                background: "transparent",
-              }}
-            >
-              My History
-            </Button>
-          </Link>
-          <Link href="/browse" style={{ textDecoration: "none", display: "inline-flex" }}>
-            <Button
-              className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
-              style={{
-                height: 38,
-                background: "var(--c-accent)",
-                color: "var(--c-accent-ink)",
-                boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
-              }}
-            >
-              Start Reading
-            </Button>
-          </Link>
+          
+          {isConnected && (
+            <Link href="/history" style={{ display: "inline-flex" }}>
+              <Button
+                className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                style={{
+                  height: 38,
+                  color: "var(--c-text)",
+                  border: "1px solid var(--c-border)",
+                  background: "transparent",
+                }}
+              >
+                My History
+              </Button>
+            </Link>
+          )}
+
+          {creatorId ? (
+            <>
+              <Link href={`/dashboard?creator=${creatorId}`} style={{ display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    color: "var(--c-text)",
+                    border: "1px solid var(--c-border)",
+                    background: "transparent",
+                  }}
+                >
+                  Dashboard
+                </Button>
+              </Link>
+              <Link href="/create" style={{ textDecoration: "none", display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    background: "var(--c-accent)",
+                    color: "var(--c-accent-ink)",
+                    boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
+                  }}
+                >
+                  Publish
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/onboard" style={{ display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    color: "var(--c-text)",
+                    border: "1px solid var(--c-border)",
+                    background: "transparent",
+                  }}
+                >
+                  Join as Creator
+                </Button>
+              </Link>
+              <Link href="/browse" style={{ textDecoration: "none", display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    background: "var(--c-accent)",
+                    color: "var(--c-accent-ink)",
+                    boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
+                  }}
+                >
+                  Start Reading
+                </Button>
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 
@@ -878,335 +1348,7 @@ export default function Home() {
               boxShadow: "var(--c-shadow)",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 14,
-                padding: "0 4px",
-              }}
-            >
-              <div style={{ display: "flex", gap: 7 }}>
-                {(Object.keys(TYPES) as DemoType[]).map((k) => {
-                  const active = k === demoType;
-                  return (
-                    <button
-                      key={k}
-                      onClick={() => setType(k)}
-                      className="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all font-sans"
-                      style={{
-                        border: `1px solid ${active ? "var(--c-violet)" : "var(--c-border)"}`,
-                        background: active ? "var(--c-violet)" : "transparent",
-                        color: active ? "#fff" : "var(--c-muted)",
-                      }}
-                    >
-                      {TYPES[k].label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-jetbrains), monospace",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "var(--c-accent)",
-                  background: "var(--c-bg)",
-                  border: "1px solid var(--c-border)",
-                  padding: "6px 11px",
-                  borderRadius: 8,
-                }}
-              >
-                {demoPriceStr}
-              </div>
-            </div>
-
-            <div
-              style={{
-                position: "relative",
-                height: 360,
-                borderRadius: 15,
-                overflow: "hidden",
-                border: "1px solid var(--c-border-soft)",
-              }}
-            >
-              {/* Content (blurred until unlocked) */}
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  filter: open ? "blur(0px)" : "blur(10px)",
-                  transform: open ? "scale(1)" : "scale(1.04)",
-                  transition: "filter 0.55s ease, transform 0.55s ease",
-                }}
-              >
-                <ContentPreview type={demoType} />
-              </div>
-
-              {/* Idle CTA */}
-              {showIdle && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 16,
-                    background: "rgba(10,8,20,0.30)",
-                    backdropFilter: "blur(1px)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontFamily: "var(--font-jetbrains), monospace",
-                      fontSize: 11,
-                      letterSpacing: "0.1em",
-                      color: "#fff",
-                      background: "rgba(0,0,0,0.4)",
-                      padding: "6px 12px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(255,255,255,0.18)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 13,
-                        height: 14,
-                        borderRadius: 3,
-                        background: "var(--c-accent)",
-                        display: "inline-block",
-                      }}
-                    />
-                    402 · LOCKED
-                  </div>
-                  <Button
-                    className="cresc-btn-accent h-11 px-5 text-sm font-bold rounded-xl"
-                    onClick={onUnlock}
-                    style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}
-                  >
-                    Unlock with an agent →
-                  </Button>
-                </div>
-              )}
-
-              {/* Lock / paying overlay */}
-              {showLock && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 18,
-                    background: "rgba(10,8,20,0.46)",
-                  }}
-                >
-                  <div
-                    style={{ position: "relative", width: 88, height: 100 }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: "50%",
-                        top: 0,
-                        width: 44,
-                        height: 42,
-                        border: "7px solid var(--c-accent)",
-                        borderBottom: "none",
-                        borderRadius: "22px 22px 0 0",
-                        transform: open
-                          ? "translateX(-62%) translateY(-15px) rotate(-12deg)"
-                          : "translateX(-50%)",
-                        transformOrigin: "bottom right",
-                        transition:
-                          "transform 0.5s cubic-bezier(.5,1.6,.4,1)",
-                      }}
-                    />
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: "50%",
-                        bottom: 0,
-                        width: 88,
-                        height: 66,
-                        marginLeft: -44,
-                        background: "var(--c-accent)",
-                        borderRadius: 13,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: "var(--font-jetbrains), monospace",
-                          fontWeight: 600,
-                          fontSize: 18,
-                          color: "var(--c-accent-ink)",
-                          letterSpacing: "-0.02em",
-                        }}
-                      >
-                        x402
-                      </span>
-                    </div>
-                    {open && (
-                      <span
-                        key={`ring-${demoType}-${demoStage}`}
-                        style={{
-                          position: "absolute",
-                          left: "50%",
-                          top: "60%",
-                          width: 60,
-                          height: 60,
-                          marginLeft: -30,
-                          marginTop: -30,
-                          borderRadius: "50%",
-                          border: "2px solid var(--c-accent)",
-                          animation: "cresc-ring 600ms ease-out forwards",
-                          pointerEvents: "none",
-                        }}
-                      />
-                    )}
-                    {demoStage === "paying" && (
-                      <span
-                        key={`coin-${demoType}`}
-                        style={{
-                          position: "absolute",
-                          left: "50%",
-                          bottom: -30,
-                          marginLeft: -7,
-                          width: 14,
-                          height: 14,
-                          borderRadius: "50%",
-                          background: "var(--c-violet)",
-                          boxShadow: "0 0 14px var(--c-violet)",
-                          animation: "cresc-coin 1s ease-in forwards",
-                          pointerEvents: "none",
-                        }}
-                      />
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-jetbrains), monospace",
-                      fontSize: 12,
-                      letterSpacing: "0.1em",
-                      color: open
-                        ? "var(--c-green)"
-                        : demoStage === "paying"
-                        ? "var(--c-amber)"
-                        : "var(--c-red)",
-                    }}
-                  >
-                    {open
-                      ? "200 · OK"
-                      : demoStage === "paying"
-                      ? "402 · awaiting payment"
-                      : "402 · Payment Required"}
-                  </div>
-                  {showAgent && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 9,
-                        background: "rgba(0,0,0,0.4)",
-                        border: "1px solid rgba(255,255,255,0.16)",
-                        padding: "7px 13px",
-                        borderRadius: 999,
-                        fontFamily: "var(--font-manrope), sans-serif",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "#fff",
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: "var(--c-violet)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontFamily: "var(--font-jetbrains), monospace",
-                          fontSize: 9,
-                          color: "#fff",
-                        }}
-                      >
-                        AI
-                      </span>
-                      {demoStage === "settling"
-                        ? `Agent · paid $${t.price.toFixed(4)}`
-                        : `Agent · paying $${t.price.toFixed(4)}…`}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Unlocked bar */}
-              {showUnlocked && (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    padding: "14px 16px",
-                    background:
-                      "linear-gradient(0deg, rgba(0,0,0,0.55), transparent)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 9,
-                      fontFamily: "var(--font-jetbrains), monospace",
-                      fontSize: 12,
-                      color: "#fff",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        background: "var(--c-green)",
-                        display: "inline-block",
-                        boxShadow: "0 0 8px var(--c-green)",
-                      }}
-                    />
-                    Unlocked · {demoPriceStr} paid · settled 0.4s on Arc
-                  </div>
-                  <button
-                    onClick={onUnlock}
-                    className="font-sans text-xs font-semibold cursor-pointer px-3 py-1.5 rounded-lg"
-                    style={{
-                      background: "rgba(255,255,255,0.14)",
-                      color: "#fff",
-                      border: "1px solid rgba(255,255,255,0.22)",
-                    }}
-                  >
-                    Replay
-                  </button>
-                </div>
-              )}
-            </div>
-
+            <HeroDemoLoop />
             <div
               style={{
                 display: "flex",

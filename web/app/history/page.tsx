@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/button";
 import {
   Wallet,
@@ -58,11 +59,43 @@ interface HistoryData {
 
 export default function HistoryPage() {
   const router = useRouter();
+  const { address, isConnected } = useAccount();
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"unlocks" | "tips">("unlocks");
+  const [creatorId, setCreatorId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setCreatorId(null);
+      return;
+    }
+    const stored = localStorage.getItem("cresc_creator_id");
+    const storedWallet = localStorage.getItem("cresc_wallet");
+    if (stored && storedWallet === address.toLowerCase()) {
+      setCreatorId(stored);
+      return;
+    }
+    fetch(`/api/creator?wallet=${address.toLowerCase()}`)
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error();
+      })
+      .then((data: any) => {
+        if (data && data.creator && data.creator.id) {
+          localStorage.setItem("cresc_creator_id", data.creator.id);
+          localStorage.setItem("cresc_wallet", address.toLowerCase());
+          setCreatorId(data.creator.id);
+        } else {
+          setCreatorId(null);
+        }
+      })
+      .catch(() => {
+        setCreatorId(null);
+      });
+  }, [address, isConnected]);
 
   // Sync theme
   useEffect(() => {
@@ -260,6 +293,51 @@ export default function HistoryPage() {
             </span>
           </button>
           <ConnectButton />
+          
+          {creatorId ? (
+            <>
+              <Link href={`/dashboard?creator=${creatorId}`} style={{ display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    color: "var(--c-text)",
+                    border: "1px solid var(--c-border)",
+                    background: "transparent",
+                  }}
+                >
+                  Dashboard
+                </Button>
+              </Link>
+              <Link href="/create" style={{ textDecoration: "none", display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    background: "var(--c-accent)",
+                    color: "var(--c-accent-ink)",
+                    boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
+                  }}
+                >
+                  Publish
+                </Button>
+              </Link>
+            </>
+          ) : (
+            <Link href="/onboard" style={{ display: "inline-flex" }}>
+              <Button
+                className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                style={{
+                  height: 38,
+                  color: "var(--c-text)",
+                  border: "1px solid var(--c-border)",
+                  background: "transparent",
+                }}
+              >
+                Join as Creator
+              </Button>
+            </Link>
+          )}
         </div>
       </nav>
 
