@@ -1,4 +1,4 @@
-# ![Cresc Logo](web/public/cresc-logo-transparent.png)
+# <img src="web/public/cresc-logo-transparent.png" alt="Cresc Logo" width="150" />
 
 Cresc is a content platform where articles and media carry a **live, self-adjusting price** between **$0.001 and $0.1**. It leverages the **x402 protocol** (HTTP 402 Payment Required for API endpoints) on the **Circle Arc Testnet** to enable sub-cent, gas-free nanopayments.
 
@@ -58,7 +58,7 @@ graph TD
 
     subgraph Evaluation ["3. Telemetry & ReaderAgent"]
         ReaderAccess -->|Page Visibility Telemetry| Heartbeats["Supabase DB: heartbeats"]
-        Heartbeats -->|Session Timeout (25s) / End| Queue["Supabase DB: jobs queue"]
+        Heartbeats -->|Session Timeout 25s / End| Queue["Supabase DB: jobs queue"]
         Queue -->|Process reader_eval| ReaderAgent["ReaderAgent (Agents Service)"]
         ReaderAgent -->|Tipping Value Judgment| Notify["Supabase DB: notifications"]
         Notify -->|Realtime Push Notification| Prompt["Reader Tip Prompt UI"]
