@@ -26,6 +26,15 @@ import {
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 interface GatewayBalanceState {
   total: string;
@@ -738,111 +747,50 @@ export default function DashboardClient({
               </a>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "var(--font-jetbrains), monospace",
-                    fontSize: 11,
-                    color: "var(--c-dim, #666)",
-                    marginBottom: 6,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label className="font-mono text-xs tracking-widest uppercase text-muted-foreground">
                   Amount (USDC)
-                </label>
-                <input
+                </Label>
+                <Input
                   type="number"
                   step="0.000001"
                   min="0.000001"
                   placeholder="0.00"
                   value={withdrawAmount}
                   onChange={(e) => setWithdrawAmount(e.target.value)}
-                  style={{
-                    width: "100%",
-                    background: "var(--c-surface, #12101f)",
-                    border: "1px solid var(--c-border, #2a2740)",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    color: "var(--c-text, #e8e6f0)",
-                    fontFamily: "var(--font-jetbrains), monospace",
-                    fontSize: 14,
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
+                  className="font-mono text-sm"
                 />
               </div>
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "var(--font-jetbrains), monospace",
-                    fontSize: 11,
-                    color: "var(--c-dim, #666)",
-                    marginBottom: 6,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
+              <div className="flex flex-col gap-1.5">
+                <Label className="font-mono text-xs tracking-widest uppercase text-muted-foreground">
                   Recipient address
-                </label>
-                <input
+                </Label>
+                <Input
                   type="text"
                   value={withdrawTo}
                   onChange={(e) => setWithdrawTo(e.target.value)}
-                  style={{
-                    width: "100%",
-                    background: "var(--c-surface, #12101f)",
-                    border: "1px solid var(--c-border, #2a2740)",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    color: "var(--c-text, #e8e6f0)",
-                    fontFamily: "var(--font-jetbrains), monospace",
-                    fontSize: 12,
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
+                  className="font-mono text-xs"
                 />
               </div>
-              <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "var(--font-jetbrains), monospace",
-                    fontSize: 11,
-                    color: "var(--c-dim, #666)",
-                    marginBottom: 6,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
+              <div className="flex flex-col gap-1.5">
+                <Label className="font-mono text-xs tracking-widest uppercase text-muted-foreground">
                   Chain
-                </label>
-                <select
-                  value={withdrawChain}
-                  onChange={(e) => setWithdrawChain(e.target.value)}
-                  style={{
-                    width: "100%",
-                    background: "var(--c-surface, #12101f)",
-                    border: "1px solid var(--c-border, #2a2740)",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    color: "var(--c-text, #e8e6f0)",
-                    fontFamily: "var(--font-jetbrains), monospace",
-                    fontSize: 13,
-                    outline: "none",
-                  }}
-                >
-                  <option value="arcTestnet">Arc Testnet</option>
-                  <option value="baseSepolia">Base Sepolia</option>
-                </select>
+                </Label>
+                <Select value={withdrawChain} onValueChange={(v) => { if (v) setWithdrawChain(v); }}>
+                  <SelectTrigger className="font-mono text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="arcTestnet">Arc Testnet</SelectItem>
+                    <SelectItem value="baseSepolia">Base Sepolia</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {withdrawError && (
-                <div style={{ color: "var(--c-red, #ef4444)", fontSize: 13 }}>
+                <p className="text-sm" style={{ color: "var(--c-red)" }}>
                   {withdrawError}
-                </div>
+                </p>
               )}
             </div>
           )}

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 
 type Theme = "dark" | "light";
 type DemoType = "article" | "photo" | "video" | "art";
@@ -709,39 +711,16 @@ export default function Home() {
               }}
             />
           </button>
-          <button
-            className="cresc-btn-ghost"
-            style={{
-              background: "transparent",
-              color: "var(--c-text)",
-              border: "1px solid var(--c-border)",
-              padding: "9px 16px",
-              borderRadius: 9,
-              cursor: "pointer",
-              fontFamily: "var(--font-manrope), sans-serif",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
+          <Button variant="outline" size="sm" className="cresc-btn-ghost text-sm font-semibold">
             Connect Wallet
-          </button>
-          <button
-            className="cresc-btn-accent"
-            style={{
-              background: "var(--c-accent)",
-              color: "var(--c-accent-ink)",
-              border: "none",
-              padding: "10px 19px",
-              borderRadius: 999,
-              cursor: "pointer",
-              fontFamily: "var(--font-manrope), sans-serif",
-              fontSize: 14,
-              fontWeight: 700,
-              boxShadow: "0 0 0 1px var(--c-border-soft)",
-            }}
+          </Button>
+          <Button
+            size="sm"
+            className="cresc-btn-accent rounded-full text-sm font-bold px-5"
+            style={{ boxShadow: "0 0 0 1px var(--c-border-soft)" }}
           >
             Start Reading
-          </button>
+          </Button>
         </div>
       </nav>
 
@@ -836,39 +815,18 @@ export default function Home() {
               scroll ends.
             </p>
             <div style={{ display: "flex", gap: 13, marginTop: 36 }}>
-              <button
-                className="cresc-btn-accent"
-                style={{
-                  background: "var(--c-accent)",
-                  color: "var(--c-accent-ink)",
-                  border: "none",
-                  padding: "14px 26px",
-                  borderRadius: 11,
-                  cursor: "pointer",
-                  fontFamily: "var(--font-manrope), sans-serif",
-                  fontSize: 15,
-                  fontWeight: 700,
-                  boxShadow: "0 0 28px var(--c-accent)",
-                }}
+              <Button
+                className="cresc-btn-accent h-12 px-6 text-sm font-bold rounded-xl"
+                style={{ boxShadow: "0 0 28px var(--c-accent)" }}
               >
                 Explore Content
-              </button>
-              <button
-                className="cresc-btn-outline"
-                style={{
-                  background: "var(--c-surface)",
-                  color: "var(--c-text)",
-                  border: "1px solid var(--c-border)",
-                  padding: "14px 26px",
-                  borderRadius: 11,
-                  cursor: "pointer",
-                  fontFamily: "var(--font-manrope), sans-serif",
-                  fontSize: 15,
-                  fontWeight: 600,
-                }}
+              </Button>
+              <Button
+                variant="outline"
+                className="cresc-btn-outline h-12 px-6 text-sm font-semibold rounded-xl"
               >
                 Publish a Piece
-              </button>
+              </Button>
             </div>
             <div
               style={{
@@ -917,19 +875,11 @@ export default function Home() {
                     <button
                       key={k}
                       onClick={() => setType(k)}
+                      className="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer transition-all font-sans"
                       style={{
-                        padding: "7px 13px",
-                        borderRadius: 9,
-                        border: `1px solid ${
-                          active ? "var(--c-violet)" : "var(--c-border)"
-                        }`,
+                        border: `1px solid ${active ? "var(--c-violet)" : "var(--c-border)"}`,
                         background: active ? "var(--c-violet)" : "transparent",
                         color: active ? "#fff" : "var(--c-muted)",
-                        fontFamily: "var(--font-manrope), sans-serif",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        transition: "all 0.2s",
                       }}
                     >
                       {TYPES[k].label}
@@ -1016,24 +966,13 @@ export default function Home() {
                     />
                     402 · LOCKED
                   </div>
-                  <button
-                    className="cresc-btn-accent"
+                  <Button
+                    className="cresc-btn-accent h-11 px-5 text-sm font-bold rounded-xl"
                     onClick={onUnlock}
-                    style={{
-                      background: "var(--c-accent)",
-                      color: "var(--c-accent-ink)",
-                      border: "none",
-                      padding: "13px 22px",
-                      borderRadius: 11,
-                      cursor: "pointer",
-                      fontFamily: "var(--font-manrope), sans-serif",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-                    }}
+                    style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}
                   >
                     Unlock with an agent →
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -1236,16 +1175,11 @@ export default function Home() {
                   </div>
                   <button
                     onClick={onUnlock}
+                    className="font-sans text-xs font-semibold cursor-pointer px-3 py-1.5 rounded-lg"
                     style={{
                       background: "rgba(255,255,255,0.14)",
                       color: "#fff",
                       border: "1px solid rgba(255,255,255,0.22)",
-                      padding: "6px 13px",
-                      borderRadius: 8,
-                      cursor: "pointer",
-                      fontFamily: "var(--font-manrope), sans-serif",
-                      fontSize: 12,
-                      fontWeight: 600,
                     }}
                   >
                     Replay
@@ -2077,53 +2011,17 @@ export default function Home() {
             >
               $0.006
             </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              defaultValue="42"
-              style={{
-                width: "100%",
-                accentColor: "var(--c-accent)",
-                marginBottom: 24,
-                cursor: "pointer",
-              }}
-            />
+            <Slider defaultValue={[42]} min={0} max={100} step={1} className="mb-6" />
             <div style={{ display: "flex", gap: 10 }}>
-              <button
-                className="cresc-btn-accent"
-                style={{
-                  flex: 1,
-                  background: "var(--c-accent)",
-                  color: "var(--c-accent-ink)",
-                  border: "none",
-                  padding: 12,
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontFamily: "var(--font-manrope), sans-serif",
-                  fontSize: 14,
-                  fontWeight: 700,
-                }}
-              >
+              <Button className="cresc-btn-accent flex-1 h-11 text-sm font-bold rounded-xl">
                 Accept
-              </button>
-              <button
-                className="cresc-btn-secondary"
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  color: "var(--c-muted)",
-                  border: "1px solid var(--c-border)",
-                  padding: 12,
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  fontFamily: "var(--font-manrope), sans-serif",
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
+              </Button>
+              <Button
+                variant="outline"
+                className="cresc-btn-secondary flex-1 h-11 text-sm font-semibold rounded-xl"
               >
                 Dismiss
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -2230,23 +2128,12 @@ export default function Home() {
             No subscription. No paywalls. Just prices that make sense — for
             words, pictures, video, and everything between.
           </p>
-          <button
-            className="cresc-btn-accent"
-            style={{
-              background: "var(--c-accent)",
-              color: "var(--c-accent-ink)",
-              border: "none",
-              padding: "16px 34px",
-              borderRadius: 12,
-              cursor: "pointer",
-              fontFamily: "var(--font-manrope), sans-serif",
-              fontSize: 16,
-              fontWeight: 700,
-              boxShadow: "0 0 34px var(--c-accent)",
-            }}
+          <Button
+            className="cresc-btn-accent h-14 px-9 text-base font-bold rounded-xl"
+            style={{ boxShadow: "0 0 34px var(--c-accent)" }}
           >
             Open the Platform
-          </button>
+          </Button>
         </div>
       </section>
 

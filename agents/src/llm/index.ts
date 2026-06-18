@@ -1,12 +1,12 @@
 // keep-in-sync: Cresc/lib/llm/index.ts
-import OpenAI from 'openai';
-import { isMockMode, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL } from '../config.js';
+import Groq from 'groq-sdk';
+import { isMockMode, LLM_API_KEY, LLM_MODEL } from '../config.js';
 
-let _client: OpenAI | null = null;
+let _client: Groq | null = null;
 
-function getClient(): OpenAI {
+function getClient(): Groq {
   if (!_client) {
-    _client = new OpenAI({ apiKey: LLM_API_KEY, baseURL: LLM_BASE_URL });
+    _client = new Groq({ apiKey: LLM_API_KEY });
   }
   return _client;
 }
@@ -54,18 +54,24 @@ export async function complete(prompt: string, opts: CompleteOptions = {}): Prom
     return MOCK_PRICE_DECISION;
   }
 
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+  const messages: Groq.Chat.ChatCompletionMessageParam[] = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const response = await getClient().chat.completions.create({
+  // Use streaming to collect the response chunk by chunk
+  const stream = await getClient().chat.completions.create({
     model: LLM_MODEL,
     messages,
     max_tokens: maxTokens,
+    stream: true,
     ...(json ? { response_format: { type: 'json_object' } } : {}),
   });
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error('[llm] Empty response from LLM API');
+  let content = '';
+  for await (const chunk of stream) {
+    content += chunk.choices[0]?.delta?.content ?? '';
+  }
+
+  if (!content) throw new Error('[llm] Empty response from Groq API');
   return content;
 }

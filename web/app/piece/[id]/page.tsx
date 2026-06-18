@@ -23,91 +23,55 @@ interface PageProps {
 export default async function PiecePage({ params }: PageProps) {
   const { id } = await params;
 
-  // Fetch piece metadata server-side.
   let piece;
   try {
     const db = createServerClient();
     piece = await getPiece(db, id);
   } catch {
     if (isMockMode) {
-      // In pure mock mode (no DB), render a deterministic demo piece.
       piece = null;
     } else {
-      // Surface DB errors clearly in dev.
       throw new Error(`Failed to load piece ${id}`);
     }
   }
 
-  // Mock piece for dev/demo when no DB is configured.
   const mockPiece = {
     id,
     title: "Mock Article: The Quiet Collapse of Attention",
-    current_price: "1000", // $0.001 in 6-decimal base units
+    current_price: "1000",
     body: "Mock body — this will be shown after payment in real mode.",
     status: "listed" as const,
   };
 
   const displayPiece = piece ?? (isMockMode ? mockPiece : null);
 
-  if (!displayPiece) {
-    notFound();
-  }
+  if (!displayPiece) notFound();
+  if (displayPiece!.status !== "listed" && !isMockMode) notFound();
 
-  if (displayPiece.status !== "listed" && !isMockMode) {
-    notFound();
-  }
-
-  // Convert standing price to display string.
   const standingPrice = moneyFromBaseUnits(
-    BigInt(displayPiece.current_price),
+    BigInt(displayPiece!.current_price),
     USDC_ERC20_DECIMALS
   );
   const priceDisplay = toDisplay(standingPrice);
 
   return (
-    <main
-      data-theme="dark"
-      style={{
-        minHeight: "100vh",
-        background: "var(--c-bg, #0a0814)",
-        color: "var(--c-text, #ede8ff)",
-        fontFamily: "var(--font-manrope), sans-serif",
-        padding: "0 0 80px",
-      }}
-    >
-      {/* ---- Nav bar ---- */}
+    <main className="min-h-screen bg-background text-foreground pb-20">
+      {/* Nav */}
       <nav
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "18px 40px",
-          borderBottom: "1px solid var(--c-border-soft, rgba(255,255,255,0.07))",
-        }}
+        className="flex items-center justify-between px-10 py-4.5 border-b"
+        style={{ borderColor: "var(--c-border-soft)" }}
       >
         <a
           href="/"
-          style={{
-            fontFamily: "var(--font-sora), sans-serif",
-            fontWeight: 700,
-            fontSize: 18,
-            letterSpacing: "-0.03em",
-            color: "var(--c-text, #ede8ff)",
-            textDecoration: "none",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
+          className="font-heading font-bold text-lg tracking-tight text-foreground no-underline flex items-center gap-2"
+          style={{ letterSpacing: "-0.03em" }}
         >
           <span
+            className="inline-block w-2.5 h-2.5 rounded-sm"
             style={{
-              width: 10,
-              height: 10,
-              background: "var(--c-accent, #7c3aed)",
-              borderRadius: 3,
-              display: "inline-block",
+              background: "var(--c-accent)",
               transform: "rotate(45deg)",
-              boxShadow: "0 0 10px var(--c-accent, #7c3aed)",
+              boxShadow: "0 0 10px var(--c-accent)",
             }}
           />
           Cresc
@@ -115,132 +79,82 @@ export default async function PiecePage({ params }: PageProps) {
 
         {/* Standing price badge */}
         <div
+          className="flex items-center gap-2 font-mono text-sm px-3 py-1.5 rounded-lg border"
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontFamily: "var(--font-jetbrains), monospace",
-            fontSize: 13,
-            color: "var(--c-accent, #7c3aed)",
-            background: "var(--c-surface, #13111f)",
-            border: "1px solid var(--c-border, rgba(255,255,255,0.1))",
-            padding: "6px 13px",
-            borderRadius: 8,
+            color: "var(--c-accent)",
+            background: "var(--c-surface)",
+            border: "1px solid var(--c-border)",
           }}
         >
           <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
             style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "var(--c-accent, #7c3aed)",
-              boxShadow: "0 0 8px var(--c-accent, #7c3aed)",
-              display: "inline-block",
+              background: "var(--c-accent)",
+              boxShadow: "0 0 8px var(--c-accent)",
             }}
           />
           {priceDisplay} · standing price
         </div>
       </nav>
 
-      {/* ---- Content area ---- */}
-      <div
-        style={{
-          maxWidth: 720,
-          margin: "0 auto",
-          padding: "64px 40px 0",
-        }}
-      >
+      {/* Content area */}
+      <div className="max-w-2xl mx-auto px-10 pt-16">
         {/* Protocol badge */}
         <div
+          className="inline-flex items-center gap-1.5 font-mono text-xs tracking-widest uppercase px-3 py-1.5 rounded-full border mb-7"
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 7,
-            fontFamily: "var(--font-jetbrains), monospace",
-            fontSize: 11,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "var(--c-violet, #8b5cf6)",
-            background: "var(--c-surface, #13111f)",
-            border: "1px solid var(--c-border, rgba(255,255,255,0.1))",
-            padding: "6px 12px",
-            borderRadius: 999,
-            marginBottom: 28,
+            color: "var(--c-violet)",
+            background: "var(--c-surface)",
+            border: "1px solid var(--c-border)",
           }}
         >
           <span
-            style={{
-              width: 5,
-              height: 5,
-              borderRadius: "50%",
-              background: "var(--c-accent, #7c3aed)",
-              display: "inline-block",
-            }}
+            className="inline-block w-1 h-1 rounded-full"
+            style={{ background: "var(--c-accent)" }}
           />
           402 · x402 payment required
         </div>
 
         {/* Title */}
         <h1
-          style={{
-            fontFamily: "var(--font-sora), sans-serif",
-            fontWeight: 700,
-            fontSize: 38,
-            lineHeight: 1.1,
-            letterSpacing: "-0.03em",
-            margin: "0 0 12px",
-          }}
+          className="font-heading font-bold text-[38px] leading-tight mb-3"
+          style={{ letterSpacing: "-0.03em" }}
         >
-          {displayPiece.title}
+          {displayPiece!.title}
         </h1>
 
         {/* Meta */}
-        <div
-          style={{
-            fontFamily: "var(--font-manrope), sans-serif",
-            fontSize: 15,
-            color: "var(--c-muted, #888)",
-            marginBottom: 40,
-          }}
-        >
+        <p className="font-sans text-[15px] text-muted-foreground mb-10">
           Unlock for {priceDisplay} · settled instantly on Arc via Circle Gateway
-        </div>
+        </p>
 
-        {/* ---- Paywall / content area (client) ---- */}
+        {/* Paywall / content area */}
         <div
+          className="rounded-2xl p-8 relative overflow-hidden border"
           style={{
-            background: "linear-gradient(170deg, var(--c-surface-hi, #1a1630), var(--c-surface, #13111f))",
-            border: "1px solid var(--c-border, rgba(255,255,255,0.1))",
-            borderRadius: 16,
-            padding: "32px 36px",
-            position: "relative",
-            overflow: "hidden",
+            background: "linear-gradient(170deg, var(--c-surface-hi), var(--c-surface))",
+            border: "1px solid var(--c-border)",
           }}
         >
           {/* Blurred preview hint */}
           <div
+            className="absolute inset-0 rounded-2xl pointer-events-none"
             style={{
-              position: "absolute",
-              inset: 0,
               backgroundImage:
-                "repeating-linear-gradient(180deg, var(--c-border-soft, rgba(255,255,255,0.04)) 0, var(--c-border-soft, rgba(255,255,255,0.04)) 1px, transparent 1px, transparent 28px)",
-              pointerEvents: "none",
-              borderRadius: 16,
+                "repeating-linear-gradient(180deg, var(--c-border-soft) 0, var(--c-border-soft) 1px, transparent 1px, transparent 28px)",
             }}
           />
 
-          <div style={{ position: "relative", zIndex: 1 }}>
-            {/* Teaser text lines (blurred placeholder) */}
-            <div style={{ marginBottom: 32 }}>
+          <div className="relative z-10">
+            {/* Teaser text lines */}
+            <div className="mb-8">
               {[100, 96, 88, 100, 72].map((w, i) => (
                 <div
                   key={i}
+                  className="h-2.5 rounded mb-2.5"
                   style={{
-                    height: 10,
-                    borderRadius: 4,
-                    background: "var(--c-border, rgba(255,255,255,0.1))",
+                    background: "var(--c-border)",
                     width: `${w}%`,
-                    marginBottom: 10,
                     opacity: 0.5 - i * 0.06,
                   }}
                 />
@@ -248,42 +162,22 @@ export default async function PiecePage({ params }: PageProps) {
             </div>
 
             {/* Unlock CTA */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 14,
-                padding: "24px 0 8px",
-                textAlign: "center",
-              }}
-            >
+            <div className="flex flex-col items-center gap-3.5 pt-6 pb-2 text-center">
               <div
-                style={{
-                  fontFamily: "var(--font-jetbrains), monospace",
-                  fontSize: 12,
-                  letterSpacing: "0.1em",
-                  color: "var(--c-dim, #555)",
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                }}
+                className="font-mono text-xs tracking-widest uppercase mb-1"
+                style={{ color: "var(--c-dim)" }}
               >
                 HTTP 402 · locked
               </div>
 
               <UnlockButton pieceId={id} priceDisplay={priceDisplay} />
 
-              <div
-                style={{
-                  fontFamily: "var(--font-manrope), sans-serif",
-                  fontSize: 13,
-                  color: "var(--c-dim, #555)",
-                  maxWidth: 340,
-                  lineHeight: 1.5,
-                }}
+              <p
+                className="font-sans text-sm max-w-xs leading-snug"
+                style={{ color: "var(--c-dim)" }}
               >
                 EIP-3009 signed offchain · zero gas · sub-second settlement on Arc
-              </div>
+              </p>
             </div>
           </div>
         </div>

@@ -99,9 +99,9 @@ async function computeWindowStats(
   // Fetch sessions in window
   const { data: sessions, error } = await db
     .from('sessions')
-    .select('reader_id, dwell_seconds, completion_pct')
+    .select('reader_id, active_dwell_seconds, completion_pct')
     .eq('piece_id', pieceId)
-    .gte('created_at', since);
+    .gte('unlocked_at', since);
 
   if (error || !sessions || sessions.length === 0) {
     return {
@@ -119,7 +119,7 @@ async function computeWindowStats(
   const views = sessions.length;
   const uniqueReaders = new Set(sessions.map((s: { reader_id: string }) => s.reader_id)).size;
 
-  const dwells = sessions.map((s: { dwell_seconds: number }) => s.dwell_seconds ?? 0);
+  const dwells = sessions.map((s: { active_dwell_seconds: number }) => s.active_dwell_seconds ?? 0);
   const avgDwellSeconds = dwells.reduce((a: number, b: number) => a + b, 0) / views;
 
   const sorted = [...dwells].sort((a: number, b: number) => a - b);

@@ -30,7 +30,8 @@ function parseNumber(key: string, fallback: number): number {
 
 export const isMockMode: boolean = !getEnv('LLM_API_KEY');
 
-export const SUPABASE_URL: string = getEnv('SUPABASE_URL') ?? '';
+// .env.local uses NEXT_PUBLIC_SUPABASE_URL (Next.js convention); agents also accept plain SUPABASE_URL.
+export const SUPABASE_URL: string = getEnv('SUPABASE_URL') ?? getEnv('NEXT_PUBLIC_SUPABASE_URL') ?? '';
 export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 export const ARC_RPC_URL: string = getEnv('ARC_RPC_URL') ?? '';

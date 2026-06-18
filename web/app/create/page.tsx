@@ -2,10 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 type Step = "form" | "submitting" | "done";
 
-const WORD_ESTIMATE = (text: string) => Math.round(text.trim().split(/\s+/).filter(Boolean).length);
+const WORD_ESTIMATE = (text: string) =>
+  Math.round(text.trim().split(/\s+/).filter(Boolean).length);
 
 export default function CreatePage() {
   const router = useRouter();
@@ -51,26 +56,33 @@ export default function CreatePage() {
 
   if (step === "done") {
     return (
-      <main style={styles.main}>
-        <div style={styles.card}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
-          <h1 style={styles.heading}>Piece published</h1>
-          <p style={styles.sub}>
-            Starting price: <strong>$0.005</strong>. The PricingAgent will begin adjusting it once
-            readers start engaging. Each decision will appear in your dashboard with full reasoning.
+      <main className="min-h-screen flex items-center justify-center p-6 bg-background">
+        <div className="bg-card border border-border rounded-2xl p-10 w-full max-w-lg">
+          <div className="text-4xl mb-3 font-mono text-primary">✓</div>
+          <h1 className="font-heading text-2xl font-bold text-foreground mb-0">Piece published</h1>
+          <p className="text-muted-foreground text-sm mt-2.5 leading-relaxed">
+            Starting price: <strong className="text-foreground">$0.005</strong>. The PricingAgent will
+            begin adjusting it once readers start engaging. Each decision will appear in your dashboard
+            with full reasoning.
           </p>
-          <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" }}>
-            <button style={styles.btnPrimary} onClick={() => router.push(`/piece/${pieceId}`)}>
+          <div className="flex gap-3 mt-6 flex-wrap">
+            <Button onClick={() => router.push(`/piece/${pieceId}`)}>
               Preview reader view
-            </button>
-            <button style={styles.btnSecondary} onClick={() => { setStep("form"); setTitle(""); setBody(""); setPieceId(""); }}>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { setStep("form"); setTitle(""); setBody(""); setPieceId(""); }}
+            >
               Publish another
-            </button>
-            <button style={styles.btnSecondary} onClick={() => router.push(`/dashboard?creator=${creatorId}`)}>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push(`/dashboard?creator=${creatorId}`)}
+            >
               Dashboard
-            </button>
+            </Button>
           </div>
-          <p style={{ ...styles.sub, marginTop: 20, fontSize: 11, opacity: 0.5 }}>Piece ID: {pieceId}</p>
+          <p className="text-muted-foreground mt-5 text-xs opacity-50">Piece ID: {pieceId}</p>
         </div>
       </main>
     );
@@ -80,90 +92,113 @@ export default function CreatePage() {
   const readMin = Math.max(1, Math.round(wordCount / 200));
 
   return (
-    <main style={styles.main}>
-      <div style={{ ...styles.card, maxWidth: 640 }}>
-        <h1 style={styles.heading}>Publish a piece</h1>
-        <p style={styles.sub}>
-          Write or paste your content. The AI pricing agent sets the opening rate at $0.005 and adjusts
-          autonomously from there based on reader engagement.
+    <main className="min-h-screen flex items-center justify-center p-6 bg-background">
+      <div className="bg-card border border-border rounded-2xl p-10 w-full max-w-2xl">
+        {/* Header */}
+        <div className="mb-1">
+          <span
+            className="font-mono text-xs tracking-widest uppercase"
+            style={{ color: "var(--c-violet)" }}
+          >
+            New piece
+          </span>
+        </div>
+        <h1 className="font-heading text-2xl font-bold text-foreground mt-1">Publish a piece</h1>
+        <p className="text-muted-foreground text-sm mt-2.5 leading-relaxed">
+          Write or paste your content. The AI pricing agent sets the opening rate at $0.005 and
+          adjusts autonomously from there based on reader engagement.
         </p>
 
-        <form onSubmit={handlePublish} style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 28 }}>
-          <label style={styles.label}>
-            Title
-            <input
-              style={styles.input}
+        <form onSubmit={handlePublish} className="flex flex-col gap-5 mt-7">
+          {/* Title */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="title" className="text-foreground">Title</Label>
+            <Input
+              id="title"
               type="text"
               placeholder="What's this piece called?"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               disabled={step === "submitting"}
               autoFocus
+              className="h-10 text-sm"
             />
-          </label>
+          </div>
 
-          <label style={styles.label}>
-            Body
-            <textarea
-              style={{ ...styles.input, minHeight: 260, resize: "vertical", lineHeight: 1.65, fontFamily: "var(--font-manrope), sans-serif" }}
+          {/* Body */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="body" className="text-foreground">Body</Label>
+            <Textarea
+              id="body"
               placeholder="Write your piece here… (min 100 characters)"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               disabled={step === "submitting"}
+              className="min-h-64 resize-y leading-relaxed font-sans text-sm"
             />
             {body.length > 0 && (
-              <span style={{ fontSize: 11, opacity: 0.45, marginTop: 4 }}>
+              <span className="text-xs text-muted-foreground">
                 {wordCount} words · ~{readMin} min read · {body.length} chars
               </span>
             )}
-          </label>
+          </div>
 
-          <div>
-            <span style={{ ...styles.label, marginBottom: 10 }}>Objective</span>
-            <div style={{ display: "flex", gap: 10 }}>
-              {(["MAX_REACH", "MAX_REVENUE"] as const).map((obj) => (
-                <button
-                  key={obj}
-                  type="button"
-                  onClick={() => setObjective(obj)}
-                  style={{
-                    ...styles.objBtn,
-                    ...(objective === obj ? styles.objBtnActive : {}),
-                  }}
-                >
-                  <span style={{ fontWeight: 700, fontSize: 13 }}>{obj === "MAX_REACH" ? "Max reach" : "Max revenue"}</span>
-                  <span style={{ fontSize: 11, opacity: 0.6, marginTop: 3 }}>
-                    {obj === "MAX_REACH" ? "Agent prices for widest audience" : "Agent prices for highest total earnings"}
-                  </span>
-                </button>
-              ))}
+          {/* Objective */}
+          <div className="flex flex-col gap-3">
+            <Label className="text-foreground">Objective</Label>
+            <div className="flex gap-3">
+              {(["MAX_REACH", "MAX_REVENUE"] as const).map((obj) => {
+                const active = objective === obj;
+                return (
+                  <button
+                    key={obj}
+                    type="button"
+                    onClick={() => setObjective(obj)}
+                    className="flex-1 flex flex-col gap-1 text-left px-4 py-3.5 rounded-xl border transition-all duration-150 cursor-pointer"
+                    style={{
+                      border: `1px solid ${active ? "var(--c-violet)" : "var(--c-border)"}`,
+                      background: active ? "rgba(155,134,255,0.1)" : "transparent",
+                      color: active ? "var(--c-text)" : "var(--c-muted)",
+                    }}
+                  >
+                    <span className="font-bold text-sm">
+                      {obj === "MAX_REACH" ? "Max reach" : "Max revenue"}
+                    </span>
+                    <span className="text-xs opacity-60">
+                      {obj === "MAX_REACH"
+                        ? "Agent prices for widest audience"
+                        : "Agent prices for highest total earnings"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* Error */}
           {error && (
-            <div style={{ color: "#ff5555", fontSize: 13, padding: "10px 14px", background: "rgba(255,60,60,0.07)", borderRadius: 8, border: "1px solid rgba(255,60,60,0.2)" }}>
+            <div
+              className="text-sm px-3.5 py-2.5 rounded-lg border"
+              style={{
+                color: "var(--c-red)",
+                background: "rgba(224,138,138,0.08)",
+                border: "1px solid rgba(224,138,138,0.22)",
+              }}
+            >
               {error}
             </div>
           )}
 
-          <button type="submit" style={{ ...styles.btnPrimary, marginTop: 4 }} disabled={step === "submitting"}>
+          <Button
+            type="submit"
+            disabled={step === "submitting"}
+            className="mt-1 h-11 text-sm font-bold"
+            style={{ boxShadow: "0 0 24px rgba(198,248,78,0.25)" }}
+          >
             {step === "submitting" ? "Publishing…" : "Publish →"}
-          </button>
+          </Button>
         </form>
       </div>
     </main>
   );
 }
-
-const styles = {
-  main: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", background: "var(--c-bg, #0d0d14)" } as React.CSSProperties,
-  card: { background: "var(--c-surface, #13131f)", border: "1px solid var(--c-border, #23233a)", borderRadius: 18, padding: "40px 44px", width: "100%" } as React.CSSProperties,
-  heading: { fontFamily: "var(--font-sora), sans-serif", fontSize: 26, fontWeight: 700, color: "var(--c-text, #eee)", margin: 0 } as React.CSSProperties,
-  sub: { fontFamily: "var(--font-manrope), sans-serif", fontSize: 14, color: "var(--c-muted, #888)", marginTop: 10, lineHeight: 1.6 } as React.CSSProperties,
-  label: { display: "flex", flexDirection: "column" as const, gap: 6, fontFamily: "var(--font-manrope), sans-serif", fontSize: 13, fontWeight: 600, color: "var(--c-text, #eee)" } as React.CSSProperties,
-  input: { background: "var(--c-surface-2, #1c1c2e)", border: "1px solid var(--c-border, #2e2e44)", borderRadius: 10, padding: "11px 14px", color: "var(--c-text, #eee)", fontFamily: "var(--font-manrope), sans-serif", fontSize: 14, outline: "none" } as React.CSSProperties,
-  objBtn: { flex: 1, display: "flex", flexDirection: "column" as const, gap: 2, textAlign: "left" as const, padding: "14px 16px", borderRadius: 10, border: "1px solid var(--c-border, #2e2e44)", background: "transparent", color: "var(--c-muted, #888)", cursor: "pointer" } as React.CSSProperties,
-  objBtnActive: { border: "1px solid var(--c-accent, #7c3aed)", background: "rgba(124,58,237,0.1)", color: "var(--c-text, #eee)" } as React.CSSProperties,
-  btnPrimary: { background: "var(--c-accent, #7c3aed)", color: "#fff", border: "none", borderRadius: 10, padding: "13px 22px", fontFamily: "var(--font-manrope), sans-serif", fontWeight: 700, fontSize: 15, cursor: "pointer", boxShadow: "0 0 24px rgba(124,58,237,0.35)" } as React.CSSProperties,
-  btnSecondary: { background: "transparent", color: "var(--c-muted, #888)", border: "1px solid var(--c-border, #333)", borderRadius: 10, padding: "13px 22px", fontFamily: "var(--font-manrope), sans-serif", fontWeight: 600, fontSize: 15, cursor: "pointer" } as React.CSSProperties,
-} as const;

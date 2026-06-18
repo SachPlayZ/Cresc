@@ -2,9 +2,16 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* dark: variant triggers on data-theme="dark" OR .dark class */
+@custom-variant dark (&:is(.dark *), &:is([data-theme="dark"] *), &[data-theme="dark"]);
 
 @theme inline {
+  /* Font aliases — use these in Tailwind: font-sans, font-mono, font-heading */
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-jetbrains);
+  --font-heading: var(--font-sora);
+
+  /* shadcn color token references */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
@@ -48,93 +55,13 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
-  }
-}
-
 /* ============================================================
-   CRESC DESIGN SYSTEM — tokens, animations, hover utilities
+   CRESC DESIGN SYSTEM — dark (default) tokens + shadcn bridge
    ============================================================ */
 
 :root,
 [data-theme="dark"] {
+  /* --- Cresc dark palette --- */
   --c-bg: #15101F;
   --c-bg-soft: #1A1430;
   --c-surface: #221A36;
@@ -154,9 +81,44 @@
   --c-shadow: 0 22px 60px rgba(0, 0, 0, 0.5);
   --c-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.35);
   --c-glow: rgba(155, 134, 255, 0.18);
+
+  /* --- shadcn CSS vars bridged to Cresc tokens --- */
+  --background: var(--c-bg);
+  --foreground: var(--c-text);
+  --card: var(--c-surface);
+  --card-foreground: var(--c-text);
+  --popover: var(--c-surface-hi);
+  --popover-foreground: var(--c-text);
+  --primary: var(--c-accent);
+  --primary-foreground: var(--c-accent-ink);
+  --secondary: var(--c-surface-2);
+  --secondary-foreground: var(--c-text);
+  --muted: var(--c-surface-hi);
+  --muted-foreground: var(--c-muted);
+  --accent: var(--c-violet);
+  --accent-foreground: var(--c-text);
+  --destructive: var(--c-red);
+  --border: var(--c-border);
+  --input: var(--c-surface-2);
+  --ring: var(--c-violet);
+  --radius: 0.625rem;
+  --chart-1: var(--c-accent);
+  --chart-2: var(--c-violet);
+  --chart-3: var(--c-green);
+  --chart-4: var(--c-amber);
+  --chart-5: var(--c-red);
+  --sidebar: var(--c-surface);
+  --sidebar-foreground: var(--c-text);
+  --sidebar-primary: var(--c-accent);
+  --sidebar-primary-foreground: var(--c-accent-ink);
+  --sidebar-accent: var(--c-violet);
+  --sidebar-accent-foreground: var(--c-text);
+  --sidebar-border: var(--c-border);
+  --sidebar-ring: var(--c-violet);
 }
 
 [data-theme="light"] {
+  /* --- Cresc light palette --- */
   --c-bg: #ECE7FA;
   --c-bg-soft: #F3EFFC;
   --c-surface: #FFFFFF;
@@ -176,7 +138,51 @@
   --c-shadow: 0 22px 55px rgba(60, 40, 120, 0.16);
   --c-shadow-sm: 0 8px 22px rgba(60, 40, 120, 0.10);
   --c-glow: rgba(106, 77, 255, 0.16);
+
+  /* --- shadcn CSS vars bridged to Cresc light tokens --- */
+  --background: var(--c-bg);
+  --foreground: var(--c-text);
+  --card: var(--c-surface);
+  --card-foreground: var(--c-text);
+  --popover: var(--c-surface);
+  --popover-foreground: var(--c-text);
+  --primary: var(--c-accent);
+  --primary-foreground: var(--c-accent-ink);
+  --secondary: var(--c-surface-2);
+  --secondary-foreground: var(--c-text);
+  --muted: var(--c-surface-hi);
+  --muted-foreground: var(--c-muted);
+  --accent: var(--c-violet);
+  --accent-foreground: var(--c-text);
+  --destructive: var(--c-red);
+  --border: var(--c-border);
+  --input: var(--c-surface-2);
+  --ring: var(--c-violet);
+  --sidebar: var(--c-surface);
+  --sidebar-foreground: var(--c-text);
+  --sidebar-primary: var(--c-accent);
+  --sidebar-primary-foreground: var(--c-accent-ink);
+  --sidebar-accent: var(--c-violet);
+  --sidebar-accent-foreground: var(--c-text);
+  --sidebar-border: var(--c-border);
+  --sidebar-ring: var(--c-violet);
 }
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+/* ============================================================
+   CRESC — animations, hover utilities
+   ============================================================ */
 
 @keyframes cresc-marquee {
   from { transform: translateX(0); }

@@ -12,16 +12,17 @@
  */
 
 import { useState, useCallback } from "react";
-
-// ---- Types ----
+import { Button } from "./ui/button";
+import { Slider } from "./ui/slider";
+import { Badge } from "./ui/badge";
 
 type TipNotificationPayload = {
   sessionId: string;
   pieceId: string;
   tipDecisionId: string;
-  suggestedTip: number;    // display dollars (e.g. 0.0005)
-  viewPricePaid: number;   // display dollars (e.g. 0.001)
-  readerMessage: string;   // human sentence from the ReaderAgent
+  suggestedTip: number;
+  viewPricePaid: number;
+  readerMessage: string;
 };
 
 interface TipPromptProps {
@@ -29,15 +30,16 @@ interface TipPromptProps {
   onDismiss: () => void;
 }
 
-// ---- State machine ----
-
 type PromptState =
   | { status: "idle" }
   | { status: "submitting" }
   | { status: "settled"; txHash: string; arcExplorerUrl: string | null; surplusDetected: boolean }
   | { status: "error"; message: string };
 
-// ---- Component ----
+function formatDollars(n: number): string {
+  if (n < 0.01) return `$${n.toFixed(6).replace(/\.?0+$/, "")}`;
+  return `$${n.toFixed(4).replace(/\.?0+$/, "")}`;
+}
 
 export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
   const [state, setState] = useState<PromptState>({ status: "idle" });
@@ -46,24 +48,24 @@ export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
   if (!notification) return null;
 
   const { payload } = notification;
-  const {
-    tipDecisionId,
-    suggestedTip,
-    viewPricePaid,
-    readerMessage,
-  } = payload;
+  const { tipDecisionId, suggestedTip, viewPricePaid, readerMessage } = payload;
 
-  // Slider range: [suggestedTip * 0.5, viewPricePaid]
-  // Pre-select suggestedTip (clamped to range)
   const sliderMin = Math.max(suggestedTip * 0.5, 0.000001);
   const sliderMax = viewPricePaid;
   const selectedTip = sliderValue ?? suggestedTip;
 
-  const handleSlider = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setSliderValue(Number(e.target.value));
+  // Convert to 0–100 scale for shadcn Slider
+  const sliderRange = sliderMax - sliderMin;
+  const sliderPct = sliderRange > 0 ? ((selectedTip - sliderMin) / sliderRange) * 100 : 50;
+
+  const handleSliderChange = useCallback(
+    (vals: number | readonly number[]) => {
+      const arr = Array.isArray(vals) ? vals : [vals];
+      const pct = (arr as number[])[0] ?? 50;
+      const val = sliderMin + (pct / 100) * (sliderMax - sliderMin);
+      setSliderValue(val);
     },
-    []
+    [sliderMin, sliderMax]
   );
 
   const handleAccept = useCallback(async () => {
@@ -94,56 +96,70 @@ export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
         surplusDetected: data.surplusDetected ?? false,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Network error";
-      setState({ status: "error", message });
+      setState({ status: "error", message: err instanceof Error ? err.message : "Network error" });
     }
   }, [state.status, tipDecisionId, selectedTip]);
-
-  // ---- Render ----
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Tip the creator"
-      style={overlayStyle}
+      className="fixed inset-0 flex items-end justify-center z-[9999] px-4 pb-8"
+      style={{ background: "rgba(0,0,0,0.55)" }}
     >
-      <div style={cardStyle}>
+      <div
+        className="w-full max-w-md flex flex-col gap-4 rounded-2xl p-6 border"
+        style={{
+          background: "var(--c-surface)",
+          border: "1px solid var(--c-border)",
+          boxShadow: "0 8px 48px rgba(0,0,0,0.6)",
+        }}
+      >
         {/* Header */}
-        <div style={headerStyle}>
-          <span style={agentBadgeStyle}>ReaderAgent</span>
+        <div className="flex items-center justify-between">
+          <Badge
+            variant="outline"
+            className="font-mono text-xs tracking-wide"
+            style={{ color: "var(--c-accent)", borderColor: "rgba(198,248,78,0.3)" }}
+          >
+            ReaderAgent
+          </Badge>
           <button
             onClick={onDismiss}
             aria-label="Dismiss"
-            style={closeBtnStyle}
+            className="text-muted-foreground bg-transparent border-none cursor-pointer text-base leading-none p-1 hover:text-foreground transition-colors"
           >
             ✕
           </button>
         </div>
 
         {/* Agent message */}
-        <p style={messageStyle}>{readerMessage}</p>
+        <p className="font-sans text-sm text-foreground leading-relaxed m-0">{readerMessage}</p>
 
-        {/* Slider + amount display */}
+        {/* Slider + amount */}
         {state.status !== "settled" && (
           <>
-            <div style={amountRowStyle}>
-              <span style={amountLabelStyle}>Tip amount</span>
-              <span style={amountValueStyle}>{formatDollars(selectedTip)}</span>
+            <div className="flex items-center justify-between">
+              <span className="font-sans text-sm text-muted-foreground">Tip amount</span>
+              <span
+                className="font-mono text-xl font-bold text-foreground"
+              >
+                {formatDollars(selectedTip)}
+              </span>
             </div>
-            <input
-              type="range"
-              min={sliderMin}
-              max={sliderMax}
-              step={(sliderMax - sliderMin) / 100}
-              value={selectedTip}
-              onChange={handleSlider}
+            <Slider
+              value={[sliderPct]}
+              onValueChange={handleSliderChange}
+              min={0}
+              max={100}
+              step={1}
               disabled={state.status === "submitting"}
-              style={sliderStyle}
+              className="w-full"
             />
-            <div style={sliderLabelsStyle}>
+            <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
               <span>{formatDollars(sliderMin)}</span>
-              <span style={{ color: "var(--c-muted, #888)", fontSize: 11 }}>
+              <span className="text-muted-foreground text-[11px]">
                 suggested {formatDollars(suggestedTip)}
               </span>
               <span>{formatDollars(sliderMax)}</span>
@@ -151,20 +167,38 @@ export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
           </>
         )}
 
-        {/* States */}
+        {/* Error state */}
         {state.status === "error" && (
-          <div style={errorBannerStyle}>
+          <div
+            className="px-3.5 py-2.5 rounded-lg font-mono text-xs"
+            style={{
+              background: "rgba(224,138,138,0.08)",
+              border: "1px solid rgba(224,138,138,0.22)",
+              color: "var(--c-red)",
+            }}
+          >
             {state.message}
           </div>
         )}
 
+        {/* Settled state */}
         {state.status === "settled" && (
-          <div style={settledBannerStyle}>
-            <span style={greenDotStyle} />
+          <div
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-lg font-mono text-xs flex-wrap"
+            style={{
+              background: "rgba(134,214,168,0.08)",
+              border: "1px solid rgba(134,214,168,0.25)",
+              color: "var(--c-green)",
+            }}
+          >
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{ background: "var(--c-green)", boxShadow: "0 0 8px var(--c-green)" }}
+            />
             <span>
               {formatDollars(selectedTip)} settled on Arc
               {state.surplusDetected && (
-                <span style={{ color: "var(--c-accent, #7c3aed)", marginLeft: 8 }}>
+                <span className="ml-2" style={{ color: "var(--c-accent)" }}>
                   — price signal sent to PricingAgent
                 </span>
               )}
@@ -174,7 +208,8 @@ export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
                 href={state.arcExplorerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={explorerLinkStyle}
+                className="ml-auto text-[11px] no-underline"
+                style={{ color: "var(--c-muted)" }}
               >
                 View tx ↗
               </a>
@@ -183,27 +218,28 @@ export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
         )}
 
         {/* Action buttons */}
-        <div style={actionsStyle}>
+        <div className="flex gap-2.5 mt-1">
           {state.status === "settled" ? (
-            <button onClick={onDismiss} style={primaryBtnStyle(false)}>
+            <Button onClick={onDismiss} className="flex-1">
               Done
-            </button>
+            </Button>
           ) : (
             <>
-              <button
+              <Button
                 onClick={handleAccept}
                 disabled={state.status === "submitting"}
-                style={primaryBtnStyle(state.status === "submitting")}
+                className="flex-1"
               >
                 {state.status === "submitting" ? "Settling…" : `Tip ${formatDollars(selectedTip)}`}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="outline"
                 onClick={onDismiss}
                 disabled={state.status === "submitting"}
-                style={secondaryBtnStyle}
+                className="flex-1"
               >
                 No thanks
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -211,181 +247,3 @@ export function TipPrompt({ notification, onDismiss }: TipPromptProps) {
     </div>
   );
 }
-
-// ---- Helpers ----
-
-function formatDollars(n: number): string {
-  // Show up to 6 significant decimal places for sub-cent amounts
-  if (n < 0.01) return `$${n.toFixed(6).replace(/\.?0+$/, "")}`;
-  return `$${n.toFixed(4).replace(/\.?0+$/, "")}`;
-}
-
-// ---- Styles (inline — matches existing component conventions in codebase) ----
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0, 0, 0, 0.55)",
-  display: "flex",
-  alignItems: "flex-end",
-  justifyContent: "center",
-  zIndex: 9999,
-  padding: "0 16px 32px",
-};
-
-const cardStyle: React.CSSProperties = {
-  background: "var(--c-surface, #13131f)",
-  border: "1px solid var(--c-border, #2a2a3a)",
-  borderRadius: 16,
-  padding: "24px 20px",
-  width: "100%",
-  maxWidth: 420,
-  display: "flex",
-  flexDirection: "column",
-  gap: 16,
-  boxShadow: "0 8px 48px rgba(0,0,0,0.6)",
-};
-
-const headerStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-};
-
-const agentBadgeStyle: React.CSSProperties = {
-  fontFamily: "var(--font-jetbrains), monospace",
-  fontSize: 11,
-  color: "var(--c-accent, #7c3aed)",
-  background: "rgba(124, 58, 237, 0.12)",
-  border: "1px solid rgba(124, 58, 237, 0.25)",
-  borderRadius: 6,
-  padding: "3px 8px",
-  letterSpacing: "0.04em",
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  color: "var(--c-muted, #888)",
-  cursor: "pointer",
-  fontSize: 16,
-  lineHeight: 1,
-  padding: 4,
-};
-
-const messageStyle: React.CSSProperties = {
-  fontFamily: "var(--font-manrope), sans-serif",
-  fontSize: 14,
-  color: "var(--c-text, #eee)",
-  lineHeight: 1.6,
-  margin: 0,
-};
-
-const amountRowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-};
-
-const amountLabelStyle: React.CSSProperties = {
-  fontFamily: "var(--font-manrope), sans-serif",
-  fontSize: 13,
-  color: "var(--c-muted, #888)",
-};
-
-const amountValueStyle: React.CSSProperties = {
-  fontFamily: "var(--font-jetbrains), monospace",
-  fontSize: 20,
-  fontWeight: 700,
-  color: "var(--c-text, #eee)",
-};
-
-const sliderStyle: React.CSSProperties = {
-  width: "100%",
-  accentColor: "var(--c-accent, #7c3aed)",
-  cursor: "pointer",
-};
-
-const sliderLabelsStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  fontFamily: "var(--font-jetbrains), monospace",
-  fontSize: 10,
-  color: "var(--c-muted, #666)",
-};
-
-const errorBannerStyle: React.CSSProperties = {
-  padding: "10px 14px",
-  background: "rgba(255, 60, 60, 0.07)",
-  border: "1px solid rgba(255, 60, 60, 0.2)",
-  borderRadius: 8,
-  fontFamily: "var(--font-jetbrains), monospace",
-  fontSize: 12,
-  color: "var(--c-red, #ff5555)",
-};
-
-const settledBannerStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  padding: "10px 14px",
-  background: "rgba(0, 200, 120, 0.08)",
-  border: "1px solid rgba(0, 200, 120, 0.25)",
-  borderRadius: 8,
-  fontFamily: "var(--font-jetbrains), monospace",
-  fontSize: 12,
-  color: "var(--c-green, #00c87a)",
-  flexWrap: "wrap",
-};
-
-const greenDotStyle: React.CSSProperties = {
-  width: 7,
-  height: 7,
-  borderRadius: "50%",
-  background: "var(--c-green, #00c87a)",
-  boxShadow: "0 0 8px var(--c-green, #00c87a)",
-  flexShrink: 0,
-};
-
-const explorerLinkStyle: React.CSSProperties = {
-  marginLeft: "auto",
-  color: "var(--c-muted, #888)",
-  textDecoration: "none",
-  fontSize: 11,
-};
-
-const actionsStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
-  marginTop: 4,
-};
-
-function primaryBtnStyle(disabled: boolean): React.CSSProperties {
-  return {
-    flex: 1,
-    padding: "12px 20px",
-    background: disabled ? "var(--c-surface-2, #1e1e2e)" : "var(--c-accent, #7c3aed)",
-    color: disabled ? "var(--c-muted, #888)" : "var(--c-accent-ink, #fff)",
-    border: disabled ? "1px solid var(--c-border, #333)" : "none",
-    borderRadius: 10,
-    cursor: disabled ? "not-allowed" : "pointer",
-    fontFamily: "var(--font-manrope), sans-serif",
-    fontSize: 14,
-    fontWeight: 700,
-    boxShadow: disabled ? "none" : "0 0 20px rgba(124, 58, 237, 0.35)",
-    transition: "all 0.2s ease",
-    opacity: disabled ? 0.8 : 1,
-  };
-}
-
-const secondaryBtnStyle: React.CSSProperties = {
-  padding: "12px 16px",
-  background: "transparent",
-  color: "var(--c-muted, #888)",
-  border: "1px solid var(--c-border, #333)",
-  borderRadius: 10,
-  cursor: "pointer",
-  fontFamily: "var(--font-manrope), sans-serif",
-  fontSize: 14,
-  fontWeight: 600,
-};
