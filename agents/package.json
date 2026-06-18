@@ -6,8 +6,11 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
-    "dev": "tsx watch --env-file=../.env.local src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "tsx watch --env-file=.env.local src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx scripts/seed.mts",
+    "demo": "tsx scripts/demo-harness.mts",
+    "generate-wallets": "tsx scripts/generate-wallets.mts"
   },
   "dependencies": {
     "@circle-fin/developer-controlled-wallets": "^10.6.0",

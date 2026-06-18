@@ -8,7 +8,7 @@ By splitting web serving from long-running autonomous LLM tasks, Cresc achieves 
 
 ## Core System Architecture
 
-Cresc is structured as a two-service monorepo communicating via a Postgres-backed job queue in Supabase.
+Cresc is structured as two separate applications communicating via a Postgres-backed job queue in Supabase.
 
 ```
 ┌─────────────────────────────────────────┐   ┌──────────────────────────────────────────┐
@@ -185,45 +185,45 @@ Creators have access to an administrative interface displaying:
 *   An LLM Provider API Key (Groq is configured by default; agents run in a mock fallback mode if left empty)
 *   Arc Testnet USDC from the [Circle Faucet](https://faucet.circle.com/)
 
-### 1. Monorepo Setup
-Clone the repository and install dependencies at the root:
+### 1. Install Dependencies
+Each app has its own `package.json`. Install dependencies separately:
 ```bash
-npm install
+cd web && npm install --legacy-peer-deps
+cd agents && npm install
 ```
 
 ### 2. Environment Variables
-Create a `.env.local` file in the root of the project using the configuration template:
+Create a `.env.local` file in **each** app directory using the configuration template:
 ```bash
-cp .env.example .env.local
+cp web/.env.example web/.env.local
+cp agents/.env.example agents/.env.local
 ```
 
 Fill in the required fields (Supabase URLs, service keys, and testnet EOA private keys). Generate development EOA keys if needed:
 ```bash
-npm run generate-wallets
+cd agents && npm run generate-wallets
 ```
 
-### 3. Symlink configuration
-Ensure both the frontend and agents workspaces share the `.env.local` file by running the setup script:
-```bash
-npm run setup
-```
-
-### 4. Database Setup
+### 3. Database Setup
 Push the Postgres migrations to your Supabase instance:
 ```bash
 npx supabase db push
 ```
 
-### 5. Seed Data
+### 4. Seed Data
 Populate the database with initial creators, mock articles, and simulated price history:
 ```bash
-npm run seed
+cd agents && npm run seed
 ```
 
-### 6. Start Development Servers
-Run Next.js and the background agents worker concurrently:
+### 5. Start Development Servers
+Run the web frontend and agents worker in **separate terminals**:
 ```bash
-npm run dev
+# Terminal 1 — Web frontend
+cd web && npm run dev
+
+# Terminal 2 — Agents worker
+cd agents && npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) to view the application.
 
@@ -233,10 +233,10 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 
 To test the end-to-end integration and watch the PricingAgent respond to a tip surplus:
 
-1.  Make sure the development servers are running (`npm run dev`).
+1.  Make sure both development servers are running (web + agents).
 2.  In a separate terminal window, launch the demo harness script:
     ```bash
-    npm run demo -- --tip-surplus
+    cd agents && npm run demo -- --tip-surplus
     ```
 3.  Observe the terminal logs. The script will:
     *   Initialize a reader session telemetry tracking sequence.
@@ -256,4 +256,5 @@ To test the end-to-end integration and watch the PricingAgent respond to a tip s
 *   [web/lib/repo/types.ts](file:///Users/sachplayz/Projects/Cresc/web/lib/repo/types.ts) — Base types and schema definitions.
 *   [agents/src/workers/pricing.ts](file:///Users/sachplayz/Projects/Cresc/agents/src/workers/pricing.ts) — Background PricingAgent sweeps logic.
 *   [agents/src/workers/reader.ts](file:///Users/sachplayz/Projects/Cresc/agents/src/workers/reader.ts) — Background ReaderAgent session evaluation logic.
-*   [scripts/demo-harness.mts](file:///Users/sachplayz/Projects/Cresc/scripts/demo-harness.mts) — Scenario verification and demo runner.
+*   [agents/scripts/demo-harness.mts](file:///Users/sachplayz/Projects/Cresc/agents/scripts/demo-harness.mts) — Scenario verification and demo runner.
+*   [agents/supabase/](file:///Users/sachplayz/Projects/Cresc/agents/supabase/) — Database migrations.
