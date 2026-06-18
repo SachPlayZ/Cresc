@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import Link from "next/link";
 
 type Theme = "dark" | "light";
 type DemoType = "article" | "photo" | "video" | "art";
@@ -715,13 +716,15 @@ export default function Home() {
             />
           </button>
           <ConnectButton />
-          <Button
-            size="sm"
-            className="cresc-btn-accent rounded-full text-sm font-bold px-5"
-            style={{ boxShadow: "0 0 0 1px var(--c-border-soft)" }}
-          >
-            Start Reading
-          </Button>
+          <Link href="/browse" style={{ textDecoration: "none" }}>
+            <Button
+              size="sm"
+              className="cresc-btn-accent rounded-full text-sm font-bold px-5"
+              style={{ boxShadow: "0 0 0 1px var(--c-border-soft)" }}
+            >
+              Start Reading
+            </Button>
+          </Link>
         </div>
       </nav>
 

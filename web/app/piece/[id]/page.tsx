@@ -10,10 +10,11 @@
 
 import { notFound } from "next/navigation";
 import { createServerClient } from "../../../lib/db";
-import { getPiece } from "../../../lib/repo/index";
+import { getPiece, getCreator } from "../../../lib/repo/index";
 import { fromBaseUnits as moneyFromBaseUnits, toDisplay } from "../../../lib/money";
 import { USDC_ERC20_DECIMALS, isMockMode } from "../../../lib/config";
 import { UnlockButton } from "../../../components/UnlockButton";
+import Link from "next/link";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -23,9 +24,13 @@ export default async function PiecePage({ params }: PageProps) {
   const { id } = await params;
 
   let piece;
+  let creator = null;
   try {
     const db = createServerClient();
     piece = await getPiece(db, id);
+    if (piece) {
+      creator = await getCreator(db, piece.creator_id);
+    }
   } catch {
     if (isMockMode) {
       piece = null;
@@ -41,9 +46,18 @@ export default async function PiecePage({ params }: PageProps) {
     kind: "article" as const,
     body: "<p>Mock body — this will be shown after payment in real mode.</p>",
     status: "listed" as const,
+    creator_id: "mock-creator-1",
+  };
+
+  const mockCreator = {
+    id: "mock-creator-1",
+    display_name: "Dana Okafor",
+    wallet_address: "0x9b86FF5733c6F84E3ECF8E3ECF8E3ECF8E3ECF8E",
+    created_at: new Date().toISOString(),
   };
 
   const displayPiece = piece ?? (isMockMode ? mockPiece : null);
+  const displayCreator = creator ?? (isMockMode ? mockCreator : null);
 
   if (!displayPiece) notFound();
   if (displayPiece!.status !== "listed" && !isMockMode) notFound();
@@ -62,21 +76,29 @@ export default async function PiecePage({ params }: PageProps) {
         className="flex items-center justify-between px-10 py-4.5 border-b"
         style={{ borderColor: "var(--c-border-soft)" }}
       >
-        <a
-          href="/"
-          className="font-heading font-bold text-lg tracking-tight text-foreground no-underline flex items-center gap-2"
-          style={{ letterSpacing: "-0.03em" }}
-        >
-          <span
-            className="inline-block w-2.5 h-2.5 rounded-sm"
-            style={{
-              background: "var(--c-accent)",
-              transform: "rotate(45deg)",
-              boxShadow: "0 0 10px var(--c-accent)",
-            }}
-          />
-          Cresc
-        </a>
+        <div className="flex items-center gap-6">
+          <Link
+            href="/"
+            className="font-heading font-bold text-lg tracking-tight text-foreground no-underline flex items-center gap-2"
+            style={{ letterSpacing: "-0.03em" }}
+          >
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-sm"
+              style={{
+                background: "var(--c-accent)",
+                transform: "rotate(45deg)",
+                boxShadow: "0 0 10px var(--c-accent)",
+              }}
+            />
+            Cresc
+          </Link>
+          <Link
+            href="/browse"
+            className="font-sans text-sm font-semibold text-muted-foreground hover:text-foreground no-underline transition-colors"
+          >
+            Browse
+          </Link>
+        </div>
 
         {/* Standing price badge */}
         <div
@@ -124,10 +146,28 @@ export default async function PiecePage({ params }: PageProps) {
           {displayPiece!.title}
         </h1>
 
-        {/* Meta */}
-        <p className="font-sans text-[15px] text-muted-foreground mb-10">
-          {isVideo ? "Unlock to watch" : "Unlock to read"} · {priceDisplay} · settled instantly on Arc via Circle Gateway
-        </p>
+        {/* Meta & Creator */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-[15px] text-muted-foreground mb-10">
+          <span>{isVideo ? "Unlock to watch" : "Unlock to read"}</span>
+          <span>·</span>
+          <span>{priceDisplay}</span>
+          <span>·</span>
+          <span>by</span>
+          {displayCreator && (
+            <Link
+              href={`/browse?creator=${displayCreator.wallet_address}`}
+              className="font-bold hover:underline transition-colors flex items-center gap-1.5"
+              style={{ color: "var(--c-violet)" }}
+            >
+              <span>{displayCreator.display_name}</span>
+              <span className="font-mono text-xs opacity-60">
+                ({displayCreator.wallet_address.slice(0, 6)}...{displayCreator.wallet_address.slice(-4)})
+              </span>
+            </Link>
+          )}
+          <span>·</span>
+          <span>settled instantly on Arc</span>
+        </div>
 
         {/* Paywall / content area */}
         <div
