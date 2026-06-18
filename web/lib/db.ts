@@ -14,13 +14,9 @@ let _browserClient: SupabaseClient | null = null;
  * createBrowserClient — for client components. Uses anon (publishable) key.
  * Safe to call multiple times — returns the same instance.
  */
-export function createBrowserClient(): SupabaseClient {
+export function createBrowserClient(): SupabaseClient | null {
   if (_browserClient) return _browserClient;
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error(
-      "[db] NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be set."
-    );
-  }
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
   _browserClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   return _browserClient;
 }

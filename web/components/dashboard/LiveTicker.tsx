@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createBrowserClient } from "../../lib/db";
 import { fromBaseUnits, toDisplay } from "../../lib/money";
 import { USDC_ERC20_DECIMALS } from "../../lib/config";
@@ -48,7 +49,7 @@ export default function LiveTicker({ pieceId, initialPrice, initialDecisions }: 
     initialDecisions[0]?.old_price ?? null
   );
   const [pulse, setPulse] = useState(0);
-  const channelRef = useRef<ReturnType<ReturnType<typeof createBrowserClient>["channel"]> | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const handleNewDecision = useCallback((decision: PriceDecision) => {
     setPrevPrice(decision.old_price);
@@ -59,6 +60,7 @@ export default function LiveTicker({ pieceId, initialPrice, initialDecisions }: 
 
   useEffect(() => {
     const db = createBrowserClient();
+    if (!db) return;
     const channel = db
       .channel(`live-ticker:${pieceId}`)
       .on(

@@ -162,6 +162,7 @@ export default function DashboardClient({
   useEffect(() => {
     if (!selectedId) return;
     const db = createBrowserClient();
+    if (!db) return;
     const channel = db
       .channel(`dashboard-payments:${selectedId}`)
       .on(

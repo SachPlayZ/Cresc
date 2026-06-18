@@ -962,7 +962,6 @@ export default function Home() {
               bottom: 0,
               width: 108,
               height: 80,
-              marginLeft: -54,
               background: "var(--c-accent)",
               borderRadius: 16,
               display: "flex",

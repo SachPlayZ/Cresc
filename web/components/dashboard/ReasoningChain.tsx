@@ -78,6 +78,7 @@ export default function ReasoningChain({ pieceId, creatorId, initialDecisions }:
 
   useEffect(() => {
     const db = createBrowserClient();
+    if (!db) return;
     const channel = db
       .channel(`reasoning-chain:${pieceId}`)
       .on(
