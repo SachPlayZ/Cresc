@@ -1,7 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { getOrCreateReaderWallet, getSpendableBalance } from "../../../../lib/reader-wallets/index";
+import { getOrCreateReaderWallet, getReaderBalance } from "../../../../lib/reader-wallets/index";
 import { USDC_ERC20_DECIMALS } from "../../../../lib/config";
 
 // IP-based rate limit: max 3 new wallet creations per IP per 60s.
@@ -44,12 +44,13 @@ export async function GET() {
 
   try {
     const wallet = await getOrCreateReaderWallet(readerId!);
-    const spendable = await getSpendableBalance(readerId!);
+    // getReaderBalance triggers auto-deposit of any on-chain USDC and returns the real Gateway balance.
+    const { gatewayAvailable, gatewayFunded } = await getReaderBalance(readerId!);
 
     const res = NextResponse.json({
       address: wallet.eoa_address,
-      balance: (Number(spendable) / 10 ** USDC_ERC20_DECIMALS).toFixed(6),
-      gatewayFunded: wallet.gateway_funded,
+      balance: (Number(gatewayAvailable) / 10 ** USDC_ERC20_DECIMALS).toFixed(6),
+      gatewayFunded,
     });
 
     if (isNew) {

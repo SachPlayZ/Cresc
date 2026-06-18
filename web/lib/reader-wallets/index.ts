@@ -176,16 +176,15 @@ export async function getReaderBalance(readerId: string): Promise<{
 
   const onChain = onChainUsdc.value;
 
-  // Auto-deposit: on-chain balance arrived but not yet in Gateway.
-  if (onChain > 0n && !wallet.gateway_funded) {
+  // Auto-deposit: whenever on-chain USDC arrives, move it into Gateway.
+  // Runs on first deposit AND subsequent top-ups (no gateway_funded gate here —
+  // after each deposit the on-chain balance drops to 0, so repeated calls are free).
+  if (onChain > 0n) {
     try {
       if (wallet.key_enc) {
-        // Raw EOA path: GatewayClient.deposit() signs the on-chain deposit tx.
         const privKey = decryptKey(wallet.key_enc);
         await depositToGateway(privKey, onChainUsdc);
       } else if (wallet.circle_wallet_id) {
-        // Circle wallet path: approve + deposit(token, value) via Circle contract execution API.
-        // Plain ERC-20 transferUsdc does NOT register a Gateway balance — deposit() is required.
         await depositToGatewayCircle(wallet.circle_wallet_id, GATEWAY_WALLET_ADDRESS, USDC_ADDRESS, onChainUsdc);
       }
       const db = createServerClient();

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createServerClient } from "../../../../lib/db";
-import { getReaderBalance, getSpendableBalance, getOrCreateReaderWallet } from "../../../../lib/reader-wallets/index";
+import { getReaderBalance, getOrCreateReaderWallet } from "../../../../lib/reader-wallets/index";
 import { USDC_ERC20_DECIMALS, isMockMode } from "../../../../lib/config";
 
 function fmt(n: bigint): string {
@@ -67,12 +67,10 @@ export async function GET() {
 
   try {
     const db = createServerClient();
+    // Run getReaderBalance first — it may auto-deposit new on-chain funds and update usdc_deposited.
+    const { gatewayAvailable } = await getReaderBalance(readerId);
+    // Re-fetch wallet AFTER getReaderBalance so usdc_deposited reflects any new deposit.
     const wallet = await getOrCreateReaderWallet(readerId);
-    
-    const [{ onChain, gatewayAvailable, gatewayFunded }, spendable] = await Promise.all([
-      getReaderBalance(readerId),
-      getSpendableBalance(readerId),
-    ]);
 
     // Query settled payments for this EOA
     const { data: payments, error: paymentsError } = await db
@@ -102,7 +100,7 @@ export async function GET() {
 
     return NextResponse.json({
       address: wallet.eoa_address,
-      spendable: fmt(spendable),
+      spendable: fmt(gatewayAvailable),
       deposited: fmt(BigInt(wallet.usdc_deposited || "0")),
       spent: fmt(BigInt(wallet.usdc_spent || "0")),
       unlocks,
