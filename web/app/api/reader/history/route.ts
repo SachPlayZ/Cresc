@@ -68,7 +68,7 @@ export async function GET() {
   try {
     const db = createServerClient();
     // Run getReaderBalance first — it may auto-deposit new on-chain funds and update usdc_deposited.
-    const { gatewayAvailable } = await getReaderBalance(readerId);
+    const { onChain, gatewayAvailable, gatewayFunded } = await getReaderBalance(readerId);
     // Re-fetch wallet AFTER getReaderBalance so usdc_deposited reflects any new deposit.
     const wallet = await getOrCreateReaderWallet(readerId);
 
@@ -100,7 +100,9 @@ export async function GET() {
 
     return NextResponse.json({
       address: wallet.eoa_address,
+      onChain: fmt(onChain),
       spendable: fmt(gatewayAvailable),
+      gatewayFunded,
       deposited: fmt(BigInt(wallet.usdc_deposited || "0")),
       spent: fmt(BigInt(wallet.usdc_spent || "0")),
       unlocks,

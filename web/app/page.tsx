@@ -1272,18 +1272,22 @@ export default function Home() {
               scroll ends.
             </p>
             <div style={{ display: "flex", gap: 13, marginTop: 36 }}>
-              <Button
-                className="cresc-btn-accent h-12 px-6 text-sm font-bold rounded-xl"
-                style={{ boxShadow: "0 0 28px var(--c-accent)" }}
-              >
-                Explore Content
-              </Button>
-              <Button
-                variant="outline"
-                className="cresc-btn-outline h-12 px-6 text-sm font-semibold rounded-xl"
-              >
-                Publish a Piece
-              </Button>
+              <Link href="/browse" style={{ display: "inline-flex", textDecoration: "none" }}>
+                <Button
+                  className="cresc-btn-accent h-12 px-6 text-sm font-bold rounded-xl"
+                  style={{ boxShadow: "0 0 28px var(--c-accent)" }}
+                >
+                  Explore Content
+                </Button>
+              </Link>
+              <Link href="/create" style={{ display: "inline-flex", textDecoration: "none" }}>
+                <Button
+                  variant="outline"
+                  className="cresc-btn-outline h-12 px-6 text-sm font-semibold rounded-xl"
+                >
+                  Publish a Piece
+                </Button>
+              </Link>
             </div>
             <div
               style={{

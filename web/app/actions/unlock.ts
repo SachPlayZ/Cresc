@@ -203,6 +203,7 @@ async function unlockDirect(
   const result = await verifyAndSettle(signedAuth, requirements);
 
   if (!result.success) {
+    console.error("[unlock] Gateway settle rejected — errorReason:", result.errorReason ?? "(none)");
     try {
       await failPayment(db, paymentRow.id);
     } catch {
@@ -237,9 +238,10 @@ async function unlockDirect(
     : null;
 
   try {
-    await settlePayment(db, paymentRow.id, txRef, arcUrl ?? "");
-  } catch {
-    // best-effort
+    // Pass payerAddress so reader_id is corrected from cookie UUID → verified EOA (fixes history visibility).
+    await settlePayment(db, paymentRow.id, txRef, arcUrl ?? "", payerAddress);
+  } catch (e) {
+    console.error("[unlock] settlePayment DB update failed (payment settled on-chain):", e);
   }
 
   // 9. Record spend on reader wallet (non-fatal, only when readerId is known)

@@ -169,7 +169,7 @@ export async function GET(
     );
   }
 
-  // Resolved reader address — use payer from settlement if available.
+  // Resolved reader address — use Gateway-verified payer EOA if available.
   const readerId = result.payer ?? readerQuery;
 
   // --- 8. Create session row ---
@@ -196,9 +196,9 @@ export async function GET(
     : null;
 
   try {
-    await settlePayment(db, paymentRow.id, txRef, arcUrl ?? "");
-  } catch {
-    // Best-effort — don't fail the unlock if settle-status update fails.
+    await settlePayment(db, paymentRow.id, txRef, arcUrl ?? "", readerId);
+  } catch (e) {
+    console.error("[piece/route] settlePayment DB update failed (payment settled on-chain):", e);
   }
 
   // --- 10. Return piece content ---

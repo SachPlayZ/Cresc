@@ -15,12 +15,17 @@ export async function settlePayment(
   db: SupabaseClient,
   id: string,
   txRef: string,
-  arcExplorerUrl: string
+  arcExplorerUrl: string,
+  /** Verified payer EOA from Gateway result — fixes reader_id from cookie UUID to EOA address. */
+  payer?: string
 ): Promise<void> {
-  const { error } = await db
-    .from('payments')
-    .update({ status: 'settled', tx_ref: txRef, arc_explorer_url: arcExplorerUrl })
-    .eq('id', id);
+  const update: Record<string, string> = {
+    status: 'settled',
+    tx_ref: txRef,
+    arc_explorer_url: arcExplorerUrl,
+  };
+  if (payer) update.reader_id = payer;
+  const { error } = await db.from('payments').update(update).eq('id', id);
   if (error) throw error;
 }
 

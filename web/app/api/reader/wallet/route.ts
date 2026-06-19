@@ -45,12 +45,14 @@ export async function GET() {
   try {
     const wallet = await getOrCreateReaderWallet(readerId!);
     // getReaderBalance triggers auto-deposit of any on-chain USDC and returns the real Gateway balance.
-    const { gatewayAvailable, gatewayFunded } = await getReaderBalance(readerId!);
+    const { onChain, gatewayAvailable, gatewayFunded } = await getReaderBalance(readerId!);
 
     const res = NextResponse.json({
       address: wallet.eoa_address,
       balance: (Number(gatewayAvailable) / 10 ** USDC_ERC20_DECIMALS).toFixed(6),
       gatewayFunded,
+      // True when USDC is on-chain but auto-deposit hasn't moved it to Gateway yet.
+      depositPending: onChain > 0n && !gatewayFunded,
     });
 
     if (isNew) {

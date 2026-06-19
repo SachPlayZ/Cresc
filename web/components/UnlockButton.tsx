@@ -12,6 +12,7 @@ type WalletInfo = {
   address: string;
   balance: string;
   gatewayFunded: boolean;
+  depositPending?: boolean;
 };
 
 type WalletState =
@@ -55,8 +56,9 @@ export function UnlockButton({ pieceId, priceDisplay, isVideo = false }: UnlockB
         const data = await res.json() as WalletInfo;
         if (!active) return;
         if (!data.gatewayFunded) {
-          const onChain = parseFloat(data.balance);
-          setWalletState(onChain > 0
+          // depositPending = USDC is on-chain but auto-deposit hasn't moved it to Gateway yet.
+          // no-usdc = wallet truly has no USDC anywhere.
+          setWalletState(data.depositPending
             ? { status: "depositing", address: data.address }
             : { status: "no-usdc", address: data.address }
           );
@@ -70,6 +72,27 @@ export function UnlockButton({ pieceId, priceDisplay, isVideo = false }: UnlockB
     loadWallet();
     return () => { active = false; };
   }, []);
+
+  // Poll while in "depositing" state: the auto-deposit runs server-side; re-check every 5s.
+  useEffect(() => {
+    if (walletState.status !== "depositing") return;
+    let active = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/reader/wallet");
+        if (!res.ok || !active) return;
+        const data = await res.json() as WalletInfo;
+        if (!active) return;
+        if (data.gatewayFunded) {
+          setWalletState({ status: "ready", wallet: data });
+        } else if (!data.depositPending) {
+          // On-chain balance gone but Gateway still empty — unlikely, but surface it.
+          setWalletState({ status: "no-usdc", address: data.address });
+        }
+      } catch { /* retry next tick */ }
+    }, 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, [walletState.status]);
 
   // Auto-pay the moment wallet reaches "ready" — no click needed.
   useEffect(() => {

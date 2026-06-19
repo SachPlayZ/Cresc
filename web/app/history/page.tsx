@@ -50,7 +50,9 @@ interface TipItem {
 
 interface HistoryData {
   address: string;
+  onChain: string;
   spendable: string;
+  gatewayFunded: boolean;
   deposited: string;
   spent: string;
   unlocks: UnlockItem[];
@@ -62,6 +64,7 @@ export default function HistoryPage() {
   const { address, isConnected } = useAccount();
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"unlocks" | "tips">("unlocks");
@@ -108,22 +111,25 @@ export default function HistoryPage() {
     } catch {}
   }, []);
 
-  // Fetch history data
-  useEffect(() => {
-    async function fetchHistory() {
-      try {
-        const res = await fetch("/api/reader/history");
-        if (res.ok) {
-          const json = await res.json();
-          setData(json);
-        }
-      } catch (err) {
-        console.error("Failed to load reader history", err);
-      } finally {
-        setLoading(false);
+  const fetchHistory = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const res = await fetch("/api/reader/history");
+      if (res.ok) {
+        const json = await res.json();
+        setData(json);
       }
+    } catch (err) {
+      console.error("Failed to load reader history", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  useEffect(() => {
     fetchHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleTheme = () => {
@@ -764,29 +770,62 @@ export default function HistoryPage() {
                 {/* Balances */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 28 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                    <span style={{ fontSize: 14, color: "var(--c-muted)" }}>Spendable Balance</span>
-                    <span
-                      style={{
-                        fontSize: 24,
-                        fontWeight: 700,
-                        color: "var(--c-accent)",
-                        fontFamily: "var(--font-jetbrains), monospace",
-                      }}
-                    >
-                      ${parseFloat(data.spendable).toFixed(4)} <span style={{ fontSize: 12, fontWeight: 500, color: "var(--c-muted)" }}>USDC</span>
+                    <span style={{ fontSize: 14, color: "var(--c-muted)" }}>Gateway Balance</span>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 24,
+                          fontWeight: 700,
+                          color: "var(--c-accent)",
+                          fontFamily: "var(--font-jetbrains), monospace",
+                        }}
+                      >
+                        ${parseFloat(data.spendable).toFixed(4)}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--c-muted)" }}>USDC</span>
+                      <button
+                        onClick={() => fetchHistory(true)}
+                        disabled={refreshing}
+                        title="Refresh balances"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: refreshing ? "default" : "pointer",
+                          padding: "2px 4px",
+                          color: "var(--c-muted)",
+                          fontSize: 12,
+                          opacity: refreshing ? 0.4 : 1,
+                          transition: "opacity 0.2s",
+                        }}
+                      >
+                        {refreshing ? "…" : "↻"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* On-chain balance row — diagnostic: shows USDC sitting on EOA not yet in Gateway */}
+                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--c-border-soft)", paddingTop: 12 }}>
+                    <span style={{ fontSize: 13, color: "var(--c-dim)" }}>On-chain (pending deposit)</span>
+                    <span style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: parseFloat(data.onChain || "0") > 0 ? "var(--c-accent)" : "var(--c-dim)",
+                      fontFamily: "var(--font-jetbrains)",
+                    }}>
+                      ${parseFloat(data.onChain || "0").toFixed(4)}
                     </span>
                   </div>
 
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid var(--c-border-soft)", paddingTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "var(--c-dim)" }}>Total Deposited</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--c-text)", fontFamily: "var(--font-jetbrains)" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-text)", fontFamily: "var(--font-jetbrains)" }}>
                       ${parseFloat(data.deposited).toFixed(4)}
                     </span>
                   </div>
 
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, color: "var(--c-dim)" }}>Total Spent</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: "var(--c-text)", fontFamily: "var(--font-jetbrains)" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--c-text)", fontFamily: "var(--font-jetbrains)" }}>
                       ${parseFloat(data.spent).toFixed(4)}
                     </span>
                   </div>

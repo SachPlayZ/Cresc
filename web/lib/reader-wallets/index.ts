@@ -175,11 +175,13 @@ export async function getReaderBalance(readerId: string): Promise<{
   ]);
 
   const onChain = onChainUsdc.value;
+  let gatewayAvailable = gatewayBal.withdrawable.value;
 
   // Auto-deposit: whenever on-chain USDC arrives, move it into Gateway.
-  // Runs on first deposit AND subsequent top-ups (no gateway_funded gate here —
-  // after each deposit the on-chain balance drops to 0, so repeated calls are free).
+  // Runs on first deposit AND subsequent top-ups — after each successful deposit
+  // the on-chain balance drops to 0, so repeated calls are cheap no-ops.
   if (onChain > 0n) {
+    let depositSucceeded = false;
     try {
       if (wallet.key_enc) {
         const privKey = decryptKey(wallet.key_enc);
@@ -187,6 +189,12 @@ export async function getReaderBalance(readerId: string): Promise<{
       } else if (wallet.circle_wallet_id) {
         await depositToGatewayCircle(wallet.circle_wallet_id, GATEWAY_WALLET_ADDRESS, USDC_ADDRESS, onChainUsdc);
       }
+      depositSucceeded = true;
+    } catch (err) {
+      console.error("[reader-wallets] auto-deposit failed:", err);
+    }
+
+    if (depositSucceeded) {
       const db = createServerClient();
       await db
         .from("reader_wallets")
@@ -195,15 +203,21 @@ export async function getReaderBalance(readerId: string): Promise<{
           usdc_deposited: (BigInt(wallet.usdc_deposited || "0") + onChain).toString(),
         })
         .eq("reader_id", readerId);
-    } catch (err) {
-      console.error("[reader-wallets] auto-deposit failed:", err);
+      // Re-read Gateway balance so the returned value reflects the deposit we just made.
+      try {
+        const refreshed = await getGatewayBalance(wallet.eoa_address);
+        gatewayAvailable = refreshed.withdrawable.value;
+      } catch {
+        // keep pre-deposit value — settlement may still work if Gateway confirms fast
+      }
     }
   }
 
   return {
     onChain,
-    gatewayAvailable: gatewayBal.withdrawable.value,
-    gatewayFunded: wallet.gateway_funded || onChain > 0n,
+    gatewayAvailable,
+    // Only report funded when Gateway actually has a positive balance.
+    gatewayFunded: gatewayAvailable > 0n,
   };
 }
 

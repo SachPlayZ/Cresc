@@ -181,8 +181,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? explorerUrl({ hash: result.txHash as `0x${string}`, chain: "arcTestnet" })
     : null;
 
-  await settlePayment(db, paymentRow.id, txHash, arcUrl ?? "").catch(() => {
-    // Best-effort — don't fail the tip accept if status update fails.
+  await settlePayment(db, paymentRow.id, txHash, arcUrl ?? "", result.payer).catch((e) => {
+    console.error("[tip/accept] settlePayment DB update failed (tip settled on-chain):", e);
   });
 
   // --- 7. Compute tip_surplus ---
