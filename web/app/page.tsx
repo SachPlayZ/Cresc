@@ -726,6 +726,158 @@ function HeroDemoLoop() {
   );
 }
 
+// ─── Animated stat counter ─────────────────────────────────────────────────
+
+interface StatItem {
+  prefix: string;
+  num: number | null; // null = non-numeric (like "<1s")
+  suffix: string;
+  display: string;   // fallback / static display when num is null
+  label: string;
+  accent: boolean;
+  decimals: number;
+}
+
+const STATS: StatItem[] = [
+  {
+    prefix: "$0.",
+    num: 0.000001,
+    suffix: "",
+    display: "$0.000001",
+    label: "minimum payment size",
+    accent: false,
+    decimals: 6,
+  },
+  {
+    prefix: "<",
+    num: 1,
+    suffix: "s",
+    display: "<1s",
+    label: "settlement time on Arc",
+    accent: false,
+    decimals: 0,
+  },
+  {
+    prefix: "",
+    num: 100,
+    suffix: "%",
+    display: "100%",
+    label: "AI-reasoned pricing decisions",
+    accent: true,
+    decimals: 0,
+  },
+];
+
+function AnimatedStat({ stat }: { stat: StatItem }) {
+  const [started, setStarted] = useState(false);
+  const [value, setValue] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const rafRef2 = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !started) {
+          setStarted(true);
+        }
+      },
+      { threshold: 0.4 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [started]);
+
+  useEffect(() => {
+    if (!started || stat.num === null) return;
+    const target = stat.num;
+    const duration = 1600;
+    const t0 = performance.now();
+    const easeOut = (x: number) => 1 - Math.pow(1 - x, 4);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / duration);
+      setValue(target * easeOut(t));
+      if (t < 1) rafRef2.current = requestAnimationFrame(step);
+      else setValue(target);
+    };
+    rafRef2.current = requestAnimationFrame(step);
+    return () => {
+      if (rafRef2.current) cancelAnimationFrame(rafRef2.current);
+    };
+  }, [started, stat.num]);
+
+  // Format the animated number
+  const formatted = () => {
+    if (stat.num === null) return stat.display;
+    // Special case: $0.000001 — animate like 0.000000 → 0.000001
+    if (stat.decimals === 6) {
+      return `$0.${Math.round(value * 1e6).toString().padStart(6, "0")}`;
+    }
+    if (stat.decimals === 0) {
+      return `${stat.prefix}${Math.round(value)}${stat.suffix}`;
+    }
+    return `${stat.prefix}${value.toFixed(stat.decimals)}${stat.suffix}`;
+  };
+
+  return (
+    <div ref={ref}>
+      <div
+        style={{
+          fontFamily: "var(--font-jetbrains), monospace",
+          fontWeight: 600,
+          fontSize: 46,
+          letterSpacing: "-0.04em",
+          marginBottom: 8,
+          fontVariantNumeric: "tabular-nums",
+          color: stat.accent ? "var(--c-violet)" : undefined,
+          transition: "color 0.3s ease",
+        }}
+      >
+        {formatted()}
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-manrope), sans-serif",
+          fontSize: 15,
+          color: "var(--c-muted)",
+        }}
+      >
+        {stat.label}
+      </div>
+    </div>
+  );
+}
+
+function StatsSection() {
+  return (
+    <section
+      data-reveal
+      style={{
+        borderTop: "1px solid var(--c-border-soft)",
+        borderBottom: "1px solid var(--c-border-soft)",
+        background: "var(--c-bg-soft)",
+        padding: "64px 40px",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1000,
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "repeat(3,1fr)",
+          gap: 40,
+          textAlign: "center",
+        }}
+      >
+        {STATS.map((stat) => (
+          <AnimatedStat key={stat.label} stat={stat} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const { address, isConnected } = useAccount();
   const [theme, setTheme] = useState<Theme>("dark");
@@ -887,16 +1039,6 @@ export default function Home() {
   const tickerLoop = [...tickerItems, ...tickerItems];
 
   const sp = spark(history, 480, 200, 18);
-  const ms = spark(
-    [
-      0.008, 0.0075, 0.0085, 0.009, 0.0088, 0.0095, 0.0102, 0.0098, 0.0108,
-      0.0114,
-    ],
-    200,
-    60,
-    8
-  );
-  const rv = spark([40, 55, 52, 70, 85, 80, 110, 140, 135, 170, 200, 260], 200, 60, 8);
 
   return (
     <div
@@ -1215,35 +1357,7 @@ export default function Home() {
         >
           {/* Left copy */}
           <div>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 9,
-                fontFamily: "var(--font-jetbrains), monospace",
-                fontSize: 12,
-                letterSpacing: "0.13em",
-                textTransform: "uppercase",
-                color: "var(--c-violet)",
-                background: "var(--c-surface)",
-                border: "1px solid var(--c-border)",
-                padding: "7px 13px",
-                borderRadius: 999,
-                marginBottom: 30,
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "var(--c-accent)",
-                  display: "inline-block",
-                  boxShadow: "0 0 8px var(--c-accent)",
-                }}
-              />
-              x402-native payments · Powered by Arc
-            </div>
+
             <h1
               style={{
                 fontFamily: "var(--font-sora), sans-serif",
@@ -1853,7 +1967,7 @@ export default function Home() {
           <div
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}
           >
-            {/* Piece card */}
+            {/* Piece card — BAR CHART */}
             <div
               style={{
                 background:
@@ -1896,19 +2010,46 @@ export default function Home() {
               >
                 $0.0114
               </div>
-              <svg viewBox="0 0 200 60" style={{ width: "100%", height: "auto" }}>
-                <polyline
-                  points={ms.line}
-                  fill="none"
-                  stroke="var(--c-green)"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-                <circle cx={ms.last[0]} cy={ms.last[1]} r="3" fill="var(--c-green)" />
-              </svg>
+              {/* Bar chart */}
+              {(() => {
+                const bars = [0.008, 0.0075, 0.0085, 0.009, 0.0088, 0.0095, 0.0102, 0.0098, 0.0108, 0.0114];
+                const maxV = Math.max(...bars);
+                const W = 200, H = 60, gap = 3;
+                const bw = (W - gap * (bars.length - 1)) / bars.length;
+                return (
+                  <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+                    <defs>
+                      <linearGradient id="bar-grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--c-green)" stopOpacity="0.95" />
+                        <stop offset="100%" stopColor="var(--c-green)" stopOpacity="0.25" />
+                      </linearGradient>
+                      <linearGradient id="bar-grad-active" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--c-green)" stopOpacity="1" />
+                        <stop offset="100%" stopColor="var(--c-green)" stopOpacity="0.5" />
+                      </linearGradient>
+                    </defs>
+                    {bars.map((v, i) => {
+                      const bh = (v / maxV) * (H - 6);
+                      const x = i * (bw + gap);
+                      const isLast = i === bars.length - 1;
+                      return (
+                        <rect
+                          key={i}
+                          x={x}
+                          y={H - bh}
+                          width={bw}
+                          height={bh}
+                          rx={2}
+                          fill={isLast ? "url(#bar-grad-active)" : "url(#bar-grad)"}
+                          opacity={isLast ? 1 : 0.55 + (i / bars.length) * 0.3}
+                        />
+                      );
+                    })}
+                  </svg>
+                );
+              })()}
             </div>
-            {/* Revenue card */}
+            {/* Revenue card — SMOOTH AREA CHART */}
             <div
               style={{
                 background:
@@ -1930,37 +2071,58 @@ export default function Home() {
               >
                 30-day revenue
               </div>
-              <svg viewBox="0 0 200 60" style={{ width: "100%", height: "auto" }}>
-                <defs>
-                  <linearGradient id="cr" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="0%"
-                      stopColor="var(--c-violet)"
-                      stopOpacity="0.24"
-                    />
-                    <stop
-                      offset="100%"
-                      stopColor="var(--c-violet)"
-                      stopOpacity="0"
-                    />
-                  </linearGradient>
-                </defs>
-                <polygon points={rv.area} fill="url(#cr)" />
-                <polyline
-                  points={rv.line}
-                  fill="none"
-                  stroke="var(--c-violet)"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              </svg>
+              {(() => {
+                const pts = [40, 55, 52, 70, 85, 80, 110, 140, 135, 170, 200, 260];
+                const W = 200, H = 72, pad = 10;
+                const maxV = Math.max(...pts);
+                const minV = Math.min(...pts);
+                const span = maxV - minV || 1;
+                const coords = pts.map((v, i) => {
+                  const x = pad + (i / (pts.length - 1)) * (W - pad * 2);
+                  const y = pad + (1 - (v - minV) / span) * (H - pad * 2);
+                  return [x, y] as [number, number];
+                });
+                // Build smooth cubic bezier path
+                const pathD = coords.reduce((acc, [x, y], i) => {
+                  if (i === 0) return `M ${x},${y}`;
+                  const [px, py] = coords[i - 1];
+                  const cpx = (px + x) / 2;
+                  return `${acc} C ${cpx},${py} ${cpx},${y} ${x},${y}`;
+                }, "");
+                const areaD = `${pathD} L ${coords[coords.length-1][0]},${H} L ${coords[0][0]},${H} Z`;
+                const [lx, ly] = coords[coords.length - 1];
+                return (
+                  <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}>
+                    <defs>
+                      <linearGradient id="rv2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--c-violet)" stopOpacity="0.35" />
+                        <stop offset="100%" stopColor="var(--c-violet)" stopOpacity="0" />
+                      </linearGradient>
+                      <filter id="glow-dot">
+                        <feGaussianBlur stdDeviation="2.5" result="blur" />
+                        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                      </filter>
+                    </defs>
+                    {/* subtle grid lines */}
+                    {[0.25, 0.5, 0.75].map((f, i) => (
+                      <line key={i} x1={pad} y1={pad + f * (H - pad * 2)} x2={W - pad} y2={pad + f * (H - pad * 2)}
+                        stroke="var(--c-border-soft)" strokeWidth="0.6" strokeDasharray="3 3" />
+                    ))}
+                    <path d={areaD} fill="url(#rv2)" />
+                    <path d={pathD} fill="none" stroke="var(--c-violet)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    {/* glowing endpoint dot */}
+                    <circle cx={lx} cy={ly} r="5" fill="var(--c-violet)" opacity="0.25" filter="url(#glow-dot)" />
+                    <circle cx={lx} cy={ly} r="3" fill="var(--c-violet)" />
+                    <circle cx={lx} cy={ly} r="1.5" fill="#fff" />
+                  </svg>
+                );
+              })()}
               <div
                 style={{
                   fontFamily: "var(--font-jetbrains), monospace",
                   fontSize: 18,
                   fontWeight: 600,
-                  marginTop: 10,
+                  marginTop: 8,
                 }}
               >
                 $284.10
@@ -2161,61 +2323,7 @@ export default function Home() {
       </section>
 
       {/* ============ STATS ============ */}
-      <section
-        data-reveal
-        style={{
-          borderTop: "1px solid var(--c-border-soft)",
-          borderBottom: "1px solid var(--c-border-soft)",
-          background: "var(--c-bg-soft)",
-          padding: "64px 40px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1000,
-            margin: "0 auto",
-            display: "grid",
-            gridTemplateColumns: "repeat(3,1fr)",
-            gap: 40,
-            textAlign: "center",
-          }}
-        >
-          {[
-            { val: "$0.000001", label: "minimum payment size", accent: false },
-            { val: "<1s", label: "settlement time on Arc", accent: false },
-            {
-              val: "100%",
-              label: "AI-reasoned pricing decisions",
-              accent: true,
-            },
-          ].map(({ val, label, accent }) => (
-            <div key={label}>
-              <div
-                style={{
-                  fontFamily: "var(--font-jetbrains), monospace",
-                  fontWeight: 600,
-                  fontSize: 46,
-                  letterSpacing: "-0.04em",
-                  marginBottom: 8,
-                  fontVariantNumeric: "tabular-nums",
-                  color: accent ? "var(--c-violet)" : undefined,
-                }}
-              >
-                {val}
-              </div>
-              <div
-                style={{
-                  fontFamily: "var(--font-manrope), sans-serif",
-                  fontSize: 15,
-                  color: "var(--c-muted)",
-                }}
-              >
-                {label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <StatsSection />
 
       {/* ============ CTA ============ */}
       <section
