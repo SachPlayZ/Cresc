@@ -462,7 +462,9 @@ function Nav() {
         <img src="/cresc-logo-transparent.png" alt="Cresc" style={{ width: 18, height: 18 }} />
         Cresc
       </Link>
-      <span className="font-mono text-xs text-muted-foreground">Ghost Onboarding</span>
+      <Link href="/docs/ghost" className="font-mono text-xs text-muted-foreground no-underline">
+        Setup docs
+      </Link>
     </nav>
   );
 }

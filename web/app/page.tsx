@@ -2409,11 +2409,11 @@ export default function Home() {
               For Creators
             </a>
             <a
-              href="#docs"
+              href="/docs/ghost"
               className="cresc-nav-link"
               style={{ color: "var(--c-muted)", textDecoration: "none" }}
             >
-              Docs
+              Ghost setup docs
             </a>
           </div>
           <div
