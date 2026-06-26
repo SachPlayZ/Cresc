@@ -1309,22 +1309,6 @@ export default function Home() {
             <>
               <Link
                 href={`/dashboard?creator=${creatorId}`}
-                style={{ display: "inline-flex" }}
-              >
-                <Button
-                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
-                  style={{
-                    height: 38,
-                    color: "var(--c-text)",
-                    border: "1px solid var(--c-border)",
-                    background: "transparent",
-                  }}
-                >
-                  Dashboard
-                </Button>
-              </Link>
-              <Link
-                href="/create"
                 style={{ textDecoration: "none", display: "inline-flex" }}
               >
                 <Button
@@ -1336,13 +1320,13 @@ export default function Home() {
                     boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
                   }}
                 >
-                  Publish
+                  Dashboard
                 </Button>
               </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/ghost-onboard" style={{ display: "inline-flex" }}>
+              <Link
+                href="/docs/ghost"
+                style={{ display: "inline-flex" }}
+              >
                 <Button
                   className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
                   style={{
@@ -1352,9 +1336,12 @@ export default function Home() {
                     background: "transparent",
                   }}
                 >
-                  Join as Creator
+                  Creator Docs
                 </Button>
               </Link>
+            </>
+          ) : (
+            <>
               <Link
                 href="/ghost-onboard"
                 style={{ textDecoration: "none", display: "inline-flex" }}
@@ -1368,7 +1355,20 @@ export default function Home() {
                     boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
                   }}
                 >
-                  Start Reading
+                  Join as Creator
+                </Button>
+              </Link>
+              <Link href="/docs/ghost" style={{ display: "inline-flex" }}>
+                <Button
+                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    color: "var(--c-text)",
+                    border: "1px solid var(--c-border)",
+                    background: "transparent",
+                  }}
+                >
+                  Creator Docs
                 </Button>
               </Link>
             </>
@@ -1439,25 +1439,25 @@ export default function Home() {
             </p>
             <div style={{ display: "flex", gap: 13, marginTop: 36 }}>
               <Link
-                href="/browse"
+                href="/ghost-onboard"
                 style={{ display: "inline-flex", textDecoration: "none" }}
               >
                 <Button
                   className="cresc-btn-accent h-12 px-6 text-sm font-bold rounded-xl"
                   style={{ boxShadow: "0 0 28px var(--c-accent)" }}
                 >
-                  Explore Content
+                  Join as Creator
                 </Button>
               </Link>
               <Link
-                href="/create"
+                href="/docs/ghost"
                 style={{ display: "inline-flex", textDecoration: "none" }}
               >
                 <Button
                   variant="outline"
                   className="cresc-btn-outline h-12 px-6 text-sm font-semibold rounded-xl"
                 >
-                  Publish a Piece
+                  Creator Docs
                 </Button>
               </Link>
             </div>
@@ -2508,12 +2508,35 @@ export default function Home() {
             No subscription. No paywalls. Just prices that make sense — for
             words, pictures, video, and everything between.
           </p>
-          <Button
-            className="cresc-btn-accent h-14 px-9 text-base font-bold rounded-xl"
-            style={{ boxShadow: "0 0 34px var(--c-accent)" }}
-          >
-            Open the Platform
-          </Button>
+          <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 40 }}>
+            <Link
+              href="/ghost-onboard"
+              style={{ display: "inline-flex", textDecoration: "none" }}
+            >
+              <Button
+                className="cresc-btn-accent h-14 px-9 text-base font-bold rounded-xl"
+                style={{ boxShadow: "0 0 34px var(--c-accent)" }}
+              >
+                Join as Creator
+              </Button>
+            </Link>
+            <Link
+              href="/docs/ghost"
+              style={{ display: "inline-flex", textDecoration: "none" }}
+            >
+              <Button
+                variant="outline"
+                className="cresc-btn-outline h-14 px-9 text-base font-semibold rounded-xl"
+                style={{
+                  color: "var(--c-text)",
+                  border: "1px solid var(--c-border)",
+                  background: "transparent",
+                }}
+              >
+                Creator Docs
+              </Button>
+            </Link>
+          </div>
         </div>
       </section>
 
