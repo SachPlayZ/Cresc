@@ -98,8 +98,9 @@ export async function getCircleWalletBalance(walletId: string): Promise<UsdcAmou
       (b.token?.symbol === "USDC" || b.token?.name?.includes("USD Coin"))
   );
   const raw = usdcBalance?.amount ?? "0";
-  // Circle returns decimal string like "1.5" — convert to 6-dec base units
-  const value = BigInt(Math.round(parseFloat(raw) * 1_000_000));
+  // Circle returns decimal string like "1.5" — use string arithmetic to avoid float precision loss
+  const { fromDisplay } = await import('../money');
+  const { value } = fromDisplay(raw, 6);
   return { value, decimals: 6 };
 }
 

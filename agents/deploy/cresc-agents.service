@@ -5,15 +5,15 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
+User=ec2-user
+Group=ec2-user
 
 # Absolute path to the agents directory on the EC2 instance.
 # Must match EC2_APP_DIR/agents set in GitHub secrets.
-WorkingDirectory=/home/ubuntu/Cresc/agents
+WorkingDirectory=/home/ec2-user/Cresc/agents
 
 # tsx is in dependencies (not devDependencies), so it survives npm ci --omit=dev
-ExecStart=/home/ubuntu/Cresc/agents/node_modules/.bin/tsx src/index.ts
+ExecStart=/home/ec2-user/Cresc/agents/node_modules/.bin/tsx src/index.ts
 
 # Secrets are baked into this file on the server — never committed to git.
 # Copy agents/.env.local to /etc/cresc-agents.env, then set permissions:

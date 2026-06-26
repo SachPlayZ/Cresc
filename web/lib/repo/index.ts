@@ -1,46 +1,24 @@
-// lib/repo/index.ts — M1 data layer barrel (public interface).
-// Import from this barrel; do not import sub-files directly from outside lib/repo/.
+// lib/repo/index.ts — data layer barrel.
 
 export type {
-  Creator, Piece, Session, Heartbeat, Payment,
-  PriceDecision, TipDecision, Dispute, Job, Notification,
-  JobPayload, PricingSweepPayload, ReaderEvalPayload, TipFeedbackPayload,
-  SignalBundle, WindowStats,
+  Article, Reader, Telemetry, PaymentEvent, PriceHistory, Withdrawal,
+  Creator, Piece,
 } from './types';
 
-export { getCreator, getCreatorByWallet, createCreator, upsertCreator } from './creators';
+// New architecture repos
+export {
+  getArticleBySlug, listArticlesByCreator, upsertGhostArticle,
+  updateArticlePrice, listActiveArticles,
+} from './articles';
 
+export { getReader, ensureReader, recordReaderSpend } from './readers';
+
+// Creator (used by ghost connect/sync and dashboard)
+export { getCreator, getCreatorByWallet, createCreator, upsertCreator, updateGhostConnection } from './creators';
+
+// Legacy pieces repo (kept for backward compat with existing dashboard)
 export {
   getPiece, getStandingPrice, getStandingPriceWithCreator,
   listPiecesByCreator, listListedPieces, createPiece, updatePiecePrice, updatePieceStatus,
+  upsertGhostPiece,
 } from './pieces';
-
-export {
-  getSession, createSession, updateSessionDwell, endSession,
-  incrementRevisit, getOpenSessions,
-} from './sessions';
-
-export { insertHeartbeat, getLastHeartbeat, getHeartbeatsSince } from './heartbeats';
-
-export {
-  createPayment, settlePayment, failPayment, getPaymentsByPiece, subscribeToPayments,
-  getUnpaidEarnings, markPaymentsPaidOut,
-} from './payments';
-
-export {
-  createPriceDecision, getRecentPriceDecisions, subscribeToPriceDecisions,
-} from './price_decisions';
-
-export {
-  createTipDecision, getTipDecision, getTipDecisionBySession, acceptTip, declineTip,
-} from './tip_decisions';
-
-export { createDispute, getDisputesByCreator } from './disputes';
-
-export { enqueueJob, getJob } from './jobs';
-
-export {
-  createNotification, getUnreadNotifications, markNotificationRead, subscribeToNotifications,
-} from './notifications';
-
-export { getSignalBundle } from './signals';

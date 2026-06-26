@@ -3,7 +3,7 @@
  * Thin wrapper over @circle-fin/x402-batching + viem.
  * All Circle/Arc SDK types are sealed here; callers use UsdcAmount / TxRef / our types only.
  *
- * Mock mode: when ARC_RPC_URL or SELLER_PRIVATE_KEY is absent, every function returns
+ * Mock mode: when neither ARC_RPC_URL nor Circle wallet mode available, every function returns
  * a deterministic stub so the spine runs without testnet config.
  *
  * keep-in-sync: Cresc-Agents/src/circle/index.ts mirrors this file.
@@ -33,7 +33,6 @@ import {
   GATEWAY_FACILITATOR_URL,
   ARC_EXPLORER_BASE,
   ARC_RPC_URL,
-  SELLER_PRIVATE_KEY,
   CIRCLE_BUYER_WALLET_ID,
   CIRCLE_BUYER_WALLET_ADDRESS,
   CIRCLE_SELLER_WALLET_ID,
@@ -69,8 +68,8 @@ export type PaymentResult = {
 
 // --- Internal helpers ---
 
-// Mock only when no RPC AND no Circle wallet mode — raw key is optional when Circle manages keys.
-const isMockCircle = !ARC_RPC_URL || (!SELLER_PRIVATE_KEY && !isCircleWalletMode);
+// Mock only when neither RPC nor Circle wallet mode available.
+const isMockCircle = !ARC_RPC_URL && !isCircleWalletMode;
 
 // Arc Testnet chain definition for viem (rpcUrls default is overridden per-client via transport).
 const arcTestnetChain = defineChain({
@@ -115,6 +114,26 @@ function makeGatewayClient(privKey: string) {
     privateKey: privKey as `0x${string}`,
     rpcUrl: requireRpc(),
   });
+}
+
+// Startup assertion — lazy singleton; runs once on first verifyAndSettle call.
+// Vercel is stateless so we can't do this at module init with a real RPC call.
+let _startupAssertionDone = false;
+async function runStartupAssertionOnce(): Promise<void> {
+  if (_startupAssertionDone || isMockCircle) return;
+  _startupAssertionDone = true;
+  const client = makePublicClient();
+  const [chainId, decimals] = await Promise.all([
+    client.getChainId(),
+    client.readContract({ address: USDC_ADDRESS, abi: ERC20_ABI, functionName: "decimals" }),
+  ]);
+  if (chainId !== ARC_CHAIN_ID) {
+    throw new Error(`[circle] chain id mismatch: expected ${ARC_CHAIN_ID}, got ${chainId}`);
+  }
+  if (decimals !== 6) {
+    throw new Error(`[circle] USDC decimals: expected 6, got ${decimals}`);
+  }
+  console.log("[circle] startup assertions passed: chainId=5042002, USDC decimals=6");
 }
 
 // Singleton facilitator — URL is a constant, safe to init at module level.
@@ -189,22 +208,15 @@ export async function getGatewayBalance(address: string): Promise<{
       withdrawing: { value: 0n, decimals: 6 },
     };
   }
-  // Circle wallet mode: no raw seller key — read Circle-managed wallet balance as proxy.
-  if (isCircleWalletMode && !SELLER_PRIVATE_KEY) {
+  // Circle wallet mode: read Circle-managed wallet balance (no raw key needed).
+  if (isCircleWalletMode) {
     const balance = CIRCLE_SELLER_WALLET_ID
       ? await getCircleWalletBalance(CIRCLE_SELLER_WALLET_ID)
       : { value: 0n, decimals: 6 };
     return { total: balance, withdrawable: balance, withdrawing: { value: 0n, decimals: 6 } };
   }
-  const client = makeGatewayClient(SELLER_PRIVATE_KEY);
-  const balances = await client.getBalances(address as `0x${string}`);
-  const { total, withdrawable, withdrawing } = balances.gateway;
-  const dec = 6;
-  return {
-    total: { value: total, decimals: dec },
-    withdrawable: { value: withdrawable, decimals: dec },
-    withdrawing: { value: withdrawing, decimals: dec },
-  };
+  // Raw key path (EC2 only) — Vercel never reaches here since SELLER_PRIVATE_KEY not exported to web.
+  throw new Error('[circle] getGatewayBalance: ARC_RPC_URL required for non-Circle-wallet mode');
 }
 
 /**
@@ -221,7 +233,7 @@ export function buildPaymentRequirements(
     asset: USDC_ADDRESS,
     amount: price.value.toString(),
     // > 7 days: Gateway rejects validBefore < 7 days (CLAUDE.md §4.3)
-    maxTimeoutSeconds: 604900,
+    maxTimeoutSeconds: 345600,
     payTo: sellerAddress,
     extra: {
       name: "GatewayWalletBatched",
@@ -232,8 +244,8 @@ export function buildPaymentRequirements(
 }
 
 /**
- * Settle a signed x402 payment via Circle Gateway BatchFacilitatorClient.
- * Docs mandate settle() directly — do NOT call verify() then settle().
+ * Verify then settle a signed x402 payment via Circle Gateway BatchFacilitatorClient.
+ * verify() validates the signature offchain; settle() triggers onchain settlement.
  */
 export async function verifyAndSettle(
   signedAuth: EIP3009Auth,
@@ -242,17 +254,22 @@ export async function verifyAndSettle(
   if (isMockCircle) {
     return { success: true, payer: "0xmock", txHash: MOCK_TX.hash };
   }
-  const result = await getFacilitator().settle(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    signedAuth as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    requirements as any
-  );
+  await runStartupAssertionOnce();
+  const facilitator = getFacilitator();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const verifyResult = await facilitator.verify(signedAuth as any, requirements as any);
+  if (!verifyResult.isValid) {
+    return { success: false, errorReason: verifyResult.invalidReason ?? "verification failed" };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const settleResult = await facilitator.settle(signedAuth as any, requirements as any);
   return {
-    success: result.success,
-    payer: result.payer,
-    txHash: result.transaction,
-    errorReason: result.errorReason,
+    success: settleResult.success,
+    payer: settleResult.payer,
+    txHash: settleResult.transaction,
+    errorReason: settleResult.errorReason,
   };
 }
 
@@ -316,23 +333,15 @@ export async function signPaymentAuthorization(
  * Withdraw USDC from Gateway to a wallet.
  * Same-chain: instant. Cross-chain: requires gas on destination.
  */
+// withdrawFromGateway — EC2-only operation (requires BUYER_PRIVATE_KEY + entity secret).
+// Vercel never calls this directly. Routed through /agent/withdraw on EC2.
 export async function withdrawFromGateway(
-  privKey: string,
-  to: string,
-  chain: string,
-  amount: UsdcAmount
+  _privKey: string,
+  _to: string,
+  _chain: string,
+  _amount: UsdcAmount
 ): Promise<TxRef> {
-  if (isMockCircle) return { ...MOCK_TX, chain };
-  if (isCircleWalletMode && !privKey) {
-    throw new Error("Withdrawals for Circle-managed wallets must be done via the Circle console — no raw key available.");
-  }
-  const client = makeGatewayClient(privKey);
-  const formatted = formatUnits(amount.value, amount.decimals);
-  const result = await client.withdraw(formatted, {
-    chain: chain as SupportedChainName,
-    recipient: to as `0x${string}`,
-  });
-  return { hash: result.mintTxHash, chain };
+  throw new Error('[circle] withdrawFromGateway must be called on EC2 via /agent/withdraw endpoint');
 }
 
 /**

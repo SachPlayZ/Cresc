@@ -122,6 +122,23 @@ export function toBaseUnitsString(amount: UsdcAmount): string {
   return amount.value.toString();
 }
 
+/**
+ * erc20ToNative — convert ERC-20 6-decimal amount to native 18-decimal bigint.
+ * Conversion: native = erc20 × 10^12. Used for gas accounting only.
+ */
+export function erc20ToNative(erc20: UsdcAmount): bigint {
+  if (erc20.decimals !== 6) throw new Error('[money] erc20ToNative requires 6-decimal ERC-20 amount');
+  return erc20.value * 10n ** 12n;
+}
+
+/**
+ * nativeToErc20 — convert native 18-decimal bigint to ERC-20 6-decimal UsdcAmount.
+ * Conversion: erc20 = native / 10^12. Truncates (no rounding) — use for display only.
+ */
+export function nativeToErc20(native: bigint): UsdcAmount {
+  return { value: native / 10n ** 12n, decimals: 6 };
+}
+
 // --- internal ---
 
 function assertSameDecimals(a: UsdcAmount, b: UsdcAmount, op: string): void {

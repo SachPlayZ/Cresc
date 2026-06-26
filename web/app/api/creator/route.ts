@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "../../../lib/db";
 import { upsertCreator, getCreatorByWallet } from "../../../lib/repo/index";
+import { createWallet, isCircleWalletMode } from "../../../lib/circle/wallets";
+import { CIRCLE_WALLET_SET_ID } from "../../../lib/config";
 
 // POST /api/creator — create or return existing creator by wallet address
 export async function POST(req: NextRequest) {
@@ -22,6 +24,23 @@ export async function POST(req: NextRequest) {
       display_name: display_name.trim(),
       wallet_address: wallet_address.trim().toLowerCase(),
     });
+
+    // Provision Circle dev-controlled wallet if not already set
+    if (isCircleWalletMode && CIRCLE_WALLET_SET_ID && !creator.circle_wallet_id) {
+      try {
+        const { walletId, address } = await createWallet(CIRCLE_WALLET_SET_ID, creator.id);
+        await db.from('creators').update({
+          circle_wallet_id: walletId,
+          eoa_address: address,
+        }).eq('id', creator.id);
+        creator.circle_wallet_id = walletId;
+        creator.eoa_address = address;
+      } catch (err) {
+        console.error('[creator] Circle wallet provisioning failed:', err);
+        // Non-fatal — creator still created, wallet can be provisioned later
+      }
+    }
+
     return NextResponse.json({ creator });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

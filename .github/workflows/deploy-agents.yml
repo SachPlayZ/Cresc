@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'agents/**'
+      - '.github/workflows/deploy-agents.yml'
   workflow_dispatch:
 
 jobs:
@@ -33,25 +34,57 @@ jobs:
     needs: typecheck
     runs-on: ubuntu-latest
     steps:
-      - name: SSH deploy
+      - name: Deploy
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
           script: |
             set -euo pipefail
-
             APP_DIR="${{ secrets.EC2_APP_DIR }}"
 
-            echo "--- pulling latest ---"
+            # ---- 1. Capture rollback ref before pull ----
             cd "$APP_DIR"
+            ROLLBACK_SHA=$(git rev-parse HEAD)
+            echo "Rollback ref: $ROLLBACK_SHA"
+
+            # ---- 2. Pull latest ----
             git pull origin main
 
-            echo "--- installing dependencies ---"
+            # ---- 3. Install deps (deps only — dev stripped) ----
             cd "$APP_DIR/agents"
             npm ci --omit=dev
 
-            echo "--- restarting service ---"
+            # ---- 4. Sync env file from GitHub Secret ----
+            # EC2_ENV_CONTENT = base64-encoded contents of agents/.env.local
+            # Update via: Settings → Secrets → EC2_ENV_CONTENT
+            echo '${{ secrets.EC2_ENV_CONTENT }}' | base64 -d | sudo tee /etc/cresc-agents.env > /dev/null
+            sudo chmod 600 /etc/cresc-agents.env
+            sudo chown root:root /etc/cresc-agents.env
+
+            # ---- 5. Graceful restart (SIGTERM → drain → SIGKILL after 30s) ----
             sudo systemctl restart cresc-agents
+
+            # ---- 6. Health check (retry 10× / 3s) ----
+            echo "Waiting for service to come up..."
+            for i in $(seq 1 10); do
+              if sudo systemctl is-active --quiet cresc-agents; then
+                echo "Service is active after ${i} attempts"
+                break
+              fi
+              if [ "$i" -eq 10 ]; then
+                echo "Service failed to start — rolling back to $ROLLBACK_SHA"
+                cd "$APP_DIR"
+                git checkout "$ROLLBACK_SHA"
+                cd "$APP_DIR/agents"
+                npm ci --omit=dev
+                sudo systemctl restart cresc-agents
+                sudo systemctl status cresc-agents --no-pager --lines=30
+                exit 1
+              fi
+              sleep 3
+            done
+
             sudo systemctl status cresc-agents --no-pager --lines=20

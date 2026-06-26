@@ -1,168 +1,162 @@
-/**
- * app/dashboard/page.tsx — M8 Creator Dashboard (Server Component)
- * URL: /dashboard?creator=<creatorId>
- *
- * Fetches all pieces, their latest price decisions, and payments server-side.
- * Passes initial data to DashboardClient for hydration + realtime.
- * No LLM calls (CLAUDE.md §7.3).
- */
+// app/dashboard/page.tsx — Creator dashboard.
+// Shows Ghost articles, current prices, earnings from payment_events, price history.
 
 import { Metadata } from "next";
+import Link from "next/link";
 import { createServerClient } from "../../lib/db";
-import {
-  listPiecesByCreator,
-  getCreator,
-  getRecentPriceDecisions,
-  getPaymentsByPiece,
-} from "../../lib/repo/index";
-import type { Piece, PriceDecision, Payment, Creator } from "../../lib/repo/types";
-import DashboardClient from "../../components/dashboard/DashboardClient";
+import { listArticlesByCreator, getCreator } from "../../lib/repo/index";
+import type { Article, Creator } from "../../lib/repo/types";
+import { fromBaseUnits, toDisplay } from "../../lib/money";
+import { USDC_ERC20_DECIMALS } from "../../lib/config";
 
-export const metadata: Metadata = {
-  title: "Creator Dashboard — Cresc",
-  description: "Live price decisions, reasoning chains, and earnings for your pieces.",
-};
+export const metadata: Metadata = { title: "Dashboard — Cresc" };
 
-// Dev fallback creator ID — used when no ?creator= param is passed.
-// Replace with a real creator UUID once seeded in DB.
-const DEV_CREATOR_ID = process.env.DEV_CREATOR_ID ?? "00000000-0000-0000-0000-000000000001";
-
-// Mock data for when DB is not yet configured (isMockMode)
-const MOCK_CREATOR: Creator = {
-  id: DEV_CREATOR_ID,
-  display_name: "Demo Creator",
-  wallet_address: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-  created_at: new Date().toISOString(),
-};
-
-const MOCK_PIECE: Piece = {
-  id: "mock-piece-1",
-  creator_id: DEV_CREATOR_ID,
-  title: "The Last Honest Metric",
-  body: "<p>Article body here.</p>",
-  kind: "article",
-  length_chars: 4800,
-  topic_tags: ["tech", "media"],
-  objective: "MAX_REVENUE",
-  current_price: "8200",  // $0.0082
-  reserve: "1000",
-  ceiling: "100000",
-  status: "listed",
-  created_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
-};
-
-const MOCK_DECISION: PriceDecision = {
-  id: "mock-decision-1",
-  piece_id: "mock-piece-1",
-  old_price: "7400",
-  new_price: "8200",
-  reserve: "1000",
-  objective: "MAX_REVENUE",
-  signals_cited: ["views_1h:3.1x", "dwell_median:220s", "bounce:thin"],
-  reasoning:
-    "Dwell median climbed to 220s this hour while bounce stayed thin — readers are engaging deeply. " +
-    "Views also spiked 3.1× over the prior hour. This combination signals genuine momentum, not noise. " +
-    "Raising price from $0.0074 to $0.0082 to capture value while engagement holds.",
-  confidence: 0.81,
-  trigger: "clock",
-  created_at: new Date(Date.now() - 12 * 60_000).toISOString(),
-};
-
-const MOCK_DECISION_2: PriceDecision = {
-  id: "mock-decision-2",
-  piece_id: "mock-piece-1",
-  old_price: "6800",
-  new_price: "7400",
-  reserve: "1000",
-  objective: "MAX_REVENUE",
-  signals_cited: ["tip_surplus:0.0012", "views_1h:2.1x"],
-  reasoning:
-    "A reader tipped $0.0082 against the $0.007 suggestion — $0.0012 surplus. This is a clear signal " +
-    "the piece was underpriced at the time of that read. Adjusting upward by $0.0006 to approach fair value.",
-  confidence: 0.73,
-  trigger: "tip_surplus",
-  created_at: new Date(Date.now() - 40 * 60_000).toISOString(),
-};
-
-const MOCK_DECISION_3: PriceDecision = {
-  id: "mock-decision-3",
-  piece_id: "mock-piece-1",
-  old_price: "7200",
-  new_price: "6800",
-  reserve: "1000",
-  objective: "MAX_REVENUE",
-  signals_cited: ["dwell_1h_trend:-14%", "views_1h:flat", "bounce:rising"],
-  reasoning:
-    "Dwell is declining faster than views — readers are starting but leaving sooner. " +
-    "This pattern suggests the content is hitting its saturation point for the current audience. " +
-    "Cutting slightly to re-stimulate interest before the audience fully exhausts.",
-  confidence: 0.41,
-  trigger: "clock",
-  created_at: new Date(Date.now() - 80 * 60_000).toISOString(),
-};
-
-interface SearchParams {
-  creator?: string;
-}
+const DEV_CREATOR_ID = process.env.DEV_CREATOR_ID ?? "";
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<SearchParams>;
+  searchParams: Promise<{ creator?: string }>;
 }) {
   const { creator: creatorParam } = await searchParams;
   const creatorId = creatorParam ?? DEV_CREATOR_ID;
 
-  let creator: Creator;
-  let pieces: Piece[];
-  let decisionsByPiece: Record<string, PriceDecision[]> = {};
-  let paymentsByPiece: Record<string, Payment[]> = {};
+  let creator: Creator | null = null;
+  let articles: Article[] = [];
+  let earningsBySlug: Record<string, bigint> = {};
+  let totalEarnings = 0n;
 
-  try {
+  if (creatorId) {
     const db = createServerClient();
+    try {
+      creator = await getCreator(db, creatorId);
+      articles = await listArticlesByCreator(db, creatorId);
 
-    // Fetch creator
-    const creatorRow = await getCreator(db, creatorId);
-    if (!creatorRow) {
-      // Fall back to mock so the page still renders in dev without DB
-      creator = MOCK_CREATOR;
-      pieces = [MOCK_PIECE];
-      decisionsByPiece = {
-        "mock-piece-1": [MOCK_DECISION, MOCK_DECISION_2, MOCK_DECISION_3],
-      };
-      paymentsByPiece = { "mock-piece-1": [] };
-    } else {
-      creator = creatorRow;
-      pieces = await listPiecesByCreator(db, creatorId);
+      // Earnings: sum payment_events per article slug
+      const slugs = articles.map((a) => a.slug);
+      if (slugs.length > 0) {
+        const { data: payments } = await db
+          .from('payment_events')
+          .select('article_slug, amount_usdc')
+          .in('article_slug', slugs);
 
-      // Fetch decisions + payments for each piece in parallel
-      await Promise.all(
-        pieces.map(async (piece) => {
-          const [decisions, payments] = await Promise.all([
-            getRecentPriceDecisions(db, piece.id, 30),
-            getPaymentsByPiece(db, piece.id, 50),
-          ]);
-          decisionsByPiece[piece.id] = decisions;
-          paymentsByPiece[piece.id] = payments;
-        })
-      );
+        for (const p of payments ?? []) {
+          const slug = p.article_slug as string;
+          const amt = BigInt(p.amount_usdc as string);
+          earningsBySlug[slug] = (earningsBySlug[slug] ?? 0n) + amt;
+          totalEarnings += amt;
+        }
+      }
+    } catch (err) {
+      console.error('[dashboard]', err);
     }
-  } catch {
-    // DB unavailable — use mock data so the page renders without secrets
-    creator = MOCK_CREATOR;
-    pieces = [MOCK_PIECE];
-    decisionsByPiece = {
-      "mock-piece-1": [MOCK_DECISION, MOCK_DECISION_2, MOCK_DECISION_3],
-    };
-    paymentsByPiece = { "mock-piece-1": [] };
   }
 
+  const fmt = (atomic: bigint | number) =>
+    toDisplay(fromBaseUnits(BigInt(atomic), USDC_ERC20_DECIMALS));
+
   return (
-    <DashboardClient
-      creator={creator}
-      initialPieces={pieces}
-      initialDecisionsByPiece={decisionsByPiece}
-      initialPaymentsByPiece={paymentsByPiece}
-    />
+    <main className="min-h-screen bg-background text-foreground">
+      <nav className="flex items-center justify-between px-10 py-4.5 border-b" style={{ borderColor: 'var(--c-border-soft)' }}>
+        <Link href="/" className="font-heading font-bold text-lg tracking-tight">Cresc</Link>
+        {creator && (
+          <span className="font-sans text-sm text-muted-foreground">
+            {creator.display_name}
+          </span>
+        )}
+      </nav>
+
+      <div className="max-w-4xl mx-auto px-6 py-12 space-y-10">
+
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="font-heading font-bold text-3xl" style={{ letterSpacing: '-0.03em' }}>Dashboard</h1>
+            <p className="text-muted-foreground text-sm mt-1">Ghost articles · live AI pricing · Circle Gateway</p>
+          </div>
+          <div className="text-right">
+            <div className="font-mono text-2xl font-bold" style={{ color: 'var(--c-accent)' }}>{fmt(totalEarnings)}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">total earnings</div>
+          </div>
+        </div>
+
+        {/* Ghost connect prompt */}
+        {!creator?.ghost_instance_url && (
+          <div className="rounded-xl border px-6 py-5 flex items-center justify-between" style={{ border: '1px solid var(--c-border)', background: 'var(--c-surface)' }}>
+            <div>
+              <div className="font-semibold text-sm">Connect your Ghost blog</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Sync articles and enable the paywall snippet</div>
+            </div>
+            <Link
+              href={`/ghost-connect${creatorId ? `?creator=${creatorId}` : ''}`}
+              className="text-sm font-semibold px-4 py-2 rounded-lg"
+              style={{ background: '#0f172a', color: '#fff' }}
+            >
+              Connect Ghost →
+            </Link>
+          </div>
+        )}
+
+        {/* Articles table */}
+        {articles.length === 0 ? (
+          <div className="text-muted-foreground text-sm py-12 text-center">
+            {creator?.ghost_instance_url
+              ? 'No articles synced yet. Ghost webhook will populate them automatically on publish.'
+              : 'Connect your Ghost blog to see articles here.'}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest px-1">Articles ({articles.length})</div>
+            <div className="rounded-xl border overflow-hidden" style={{ border: '1px solid var(--c-border)' }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ background: 'var(--c-surface)', borderBottom: '1px solid var(--c-border)' }}>
+                    <th className="text-left px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Article</th>
+                    <th className="text-right px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Current price</th>
+                    <th className="text-right px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Earned</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {articles.map((article, i) => (
+                    <tr
+                      key={article.slug}
+                      style={{
+                        borderTop: i > 0 ? '1px solid var(--c-border-soft)' : undefined,
+                      }}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-sm leading-tight">{article.title || article.slug}</div>
+                        <div className="font-mono text-xs text-muted-foreground mt-0.5">{article.slug}</div>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sm" style={{ color: 'var(--c-accent)' }}>
+                        {fmt(article.current_price_atomic)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sm">
+                        {fmt(earningsBySlug[article.slug] ?? 0n)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Withdraw */}
+        {creator?.eoa_address && (
+          <div className="rounded-xl border px-6 py-5 space-y-3" style={{ border: '1px solid var(--c-border)', background: 'var(--c-surface)' }}>
+            <div className="font-semibold text-sm">Withdraw earnings</div>
+            <div className="font-mono text-xs text-muted-foreground">
+              Creator wallet: {creator.eoa_address.slice(0, 10)}…{creator.eoa_address.slice(-6)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Withdrawals routed through EC2 → Circle Gateway → CCTP V2 cross-chain.
+              Call the dashboard withdraw API to initiate.
+            </p>
+          </div>
+        )}
+
+      </div>
+    </main>
   );
 }

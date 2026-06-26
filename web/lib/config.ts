@@ -64,10 +64,9 @@ export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv("SUPABASE_SERVICE_ROLE_K
 
 // --- Arc / Circle (server-side only — never NEXT_PUBLIC_) ---
 export const ARC_RPC_URL: string = getEnv("ARC_RPC_URL") ?? "";
-export const SELLER_ADDRESS: string = getEnv("SELLER_ADDRESS") ?? "";
-export const SELLER_PRIVATE_KEY: string = getEnv("SELLER_PRIVATE_KEY") ?? "";
-export const BUYER_ADDRESS: string = getEnv("BUYER_ADDRESS") ?? "";
-export const BUYER_PRIVATE_KEY: string = getEnv("BUYER_PRIVATE_KEY") ?? "";
+// SELLER_PRIVATE_KEY must NEVER exist on Vercel — creator/seller = Circle dev-controlled wallet (no raw key).
+// BUYER_PRIVATE_KEY lives ONLY on EC2 — never import it in web code.
+// Vercel only needs BatchFacilitatorClient (keyless) for settlement.
 
 // --- Circle developer-controlled wallets (optional upgrade — replaces raw EOA keys) ---
 // When CIRCLE_API_KEY + ENTITY_SECRET are set, signPaymentAuthorization uses Circle MPC
@@ -124,20 +123,50 @@ export function validateServerConfig(): void {
 }
 
 /**
- * validatePaymentConfig — call from Circle adapter (M3) before any payment operation.
- * Throws if EOA wallet keys or RPC are missing.
+ * validatePaymentConfig — call from Circle adapter before any payment operation.
+ * Vercel only needs ARC_RPC_URL (for public client reads) and Circle wallet config.
+ * Raw keys (BUYER_PRIVATE_KEY) live on EC2 only.
  */
 export function validatePaymentConfig(): void {
-  requireEnv("ARC_RPC_URL", "Arc RPC connection");
-  requireEnv("SELLER_ADDRESS", "payment settlement");
-  requireEnv("SELLER_PRIVATE_KEY", "payment signing (server-side only)");
-  requireEnv("BUYER_ADDRESS", "payment sending");
-  requireEnv("BUYER_PRIVATE_KEY", "payment signing");
+  if (!isCircleWalletMode && !ARC_RPC_URL) {
+    throw new Error("[config] Either ARC_RPC_URL or CIRCLE_API_KEY+ENTITY_SECRET required for payments");
+  }
 }
 
+// Derived flag: Circle wallet mode active when both keys present
+export const isCircleWalletMode: boolean = !!(
+  getEnv("CIRCLE_API_KEY") && (getEnv("ENTITY_SECRET") || getEnv("CIRCLE_ENTITY_SECRET"))
+);
+
 // --- Reader wallet encryption (raw EOA path) ---
-// 32 random bytes, hex-encoded. Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 export const READER_KEY_SECRET: string = getEnv("READER_KEY_SECRET") ?? "";
+
+// --- Internal Vercel↔EC2 HMAC auth (CLAUDE.md §Vercel↔EC2 boundary) ---
+export const INTERNAL_HMAC_SECRET: string = getEnv("INTERNAL_HMAC_SECRET") ?? "";
+export const EC2_AGENT_BASE_URL: string = getEnv("EC2_AGENT_BASE_URL") ?? "";
+
+// --- Ghost key encryption (AES-256-GCM, 32-byte hex key) ---
+export const GHOST_KEY_ENCRYPTION_SECRET: string = getEnv("GHOST_KEY_ENCRYPTION_SECRET") ?? "";
+
+// --- Ghost webhook (Vercel-side verification) ---
+export const GHOST_WEBHOOK_SECRET: string = getEnv("GHOST_WEBHOOK_SECRET") ?? "";
+
+// INTERNAL_HMAC_SECRET assertion — skipped at Next.js build time (NEXT_PHASE env var).
+// Throws at runtime so misconfigured deployments fail fast on first request.
+if (
+  !INTERNAL_HMAC_SECRET &&
+  process.env.NEXT_PHASE !== 'phase-production-build' &&
+  process.env.NEXT_PHASE !== 'phase-export'
+) {
+  throw new Error(
+    "[config] INTERNAL_HMAC_SECRET required. " +
+    "Generate: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\" " +
+    "Add to .env.local on BOTH web and agents."
+  );
+}
+
+// --- Reader Agent gate thresholds (EC2 env vars; listed here for reference) ---
+// QUALITY_MIN, INTEREST_MIN, CONFIDENCE_MIN — see EC2 config.ts
 
 // Frozen chain config object for convenience
 export const chainConfig = {

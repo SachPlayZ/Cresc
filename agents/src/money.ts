@@ -59,6 +59,15 @@ export function toBaseUnitsString(amount: UsdcAmount): string {
   return amount.value.toString();
 }
 
+export function erc20ToNative(erc20: UsdcAmount): bigint {
+  if (erc20.decimals !== 6) throw new Error('[money] erc20ToNative requires 6-decimal ERC-20 amount');
+  return erc20.value * 10n ** 12n;
+}
+
+export function nativeToErc20(native: bigint): UsdcAmount {
+  return { value: native / 10n ** 12n, decimals: 6 };
+}
+
 function assertSameDecimals(a: UsdcAmount, b: UsdcAmount, op: string): void {
   if (a.decimals !== b.decimals) {
     throw new Error(`[money] ${op}: decimal mismatch — a=${a.decimals}, b=${b.decimals}`);

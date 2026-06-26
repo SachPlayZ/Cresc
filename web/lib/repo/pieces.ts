@@ -83,6 +83,45 @@ export async function updatePiecePrice(
   if (error) throw error;
 }
 
+export async function upsertGhostPiece(
+  db: SupabaseClient,
+  input: {
+    creator_id: string;
+    title: string;
+    body: string;
+    kind: 'article';
+    length_chars: number;
+    topic_tags: string[];
+    objective: 'MAX_REVENUE';
+    current_price: string;
+    reserve: string;
+    ceiling: string;
+    status: 'listed';
+    ghost_post_id: string;
+    ghost_slug: string;
+    ghost_instance_url: string;
+  }
+): Promise<string> {
+  const { data: existing } = await db
+    .from('pieces')
+    .select('id')
+    .eq('creator_id', input.creator_id)
+    .eq('ghost_post_id', input.ghost_post_id)
+    .single();
+
+  if (existing) {
+    await db
+      .from('pieces')
+      .update({ title: input.title, body: input.body, length_chars: input.length_chars })
+      .eq('id', existing.id);
+    return existing.id as string;
+  }
+
+  const { data, error } = await db.from('pieces').insert(input).select('id').single();
+  if (error) throw error;
+  return data.id as string;
+}
+
 export async function updatePieceStatus(
   db: SupabaseClient,
   id: string,
