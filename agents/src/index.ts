@@ -5,8 +5,7 @@
 
 import express, { type Request, type Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { createPublicClient, http } from 'viem';
-import { defineChain } from 'viem';
+import { createPublicClient, http, defineChain } from 'viem';
 import { GatewayClient } from '@circle-fin/x402-batching/client';
 import {
   validateAgentConfig,
@@ -61,13 +60,17 @@ async function assertStartup(): Promise<void> {
     if (!BUYER_PRIVATE_KEY) {
       throw new Error('[startup] BUYER_PRIVATE_KEY required in live mode');
     }
-    // 2. Chain ID assertion
+    // 2. CIRCLE_ENTITY_SECRET required for withdrawals
+    if (!process.env.CIRCLE_ENTITY_SECRET && !process.env.ENTITY_SECRET) {
+      throw new Error('[startup] CIRCLE_ENTITY_SECRET (or ENTITY_SECRET) required for creator withdrawals');
+    }
+    // 3. Chain ID assertion
     const publicClient = createPublicClient({ chain: arcTestnetChain, transport: http(ARC_RPC_URL) });
     const chainId = await publicClient.getChainId();
     if (chainId !== ARC_CHAIN_ID) {
       throw new Error(`[startup] chain id mismatch: expected ${ARC_CHAIN_ID}, got ${chainId}`);
     }
-    // 3. USDC decimals assertion
+    // 4. USDC decimals assertion
     const decimals = await publicClient.readContract({
       address: USDC_ADDRESS as `0x${string}`,
       abi: DECIMALS_ABI,
@@ -76,48 +79,86 @@ async function assertStartup(): Promise<void> {
     if (decimals !== 6) {
       throw new Error(`[startup] USDC decimals: expected 6, got ${decimals}`);
     }
-    console.log('[startup] assertions passed: chainId=5042002, USDC decimals=6');
+    console.log('[startup] assertions passed: chainId=5042002, USDC decimals=6, CIRCLE_ENTITY_SECRET present');
   }
 }
 
-// --- Gateway redeposit loop ---
-let gatewayClient: InstanceType<typeof GatewayClient> | null = null;
+// --- Single shared GatewayClient (one instance = one nonce sequence) ---
+let _gatewayClient: InstanceType<typeof GatewayClient> | null = null;
 
-function getGatewayClient(): InstanceType<typeof GatewayClient> | null {
+export function getGatewayClient(): InstanceType<typeof GatewayClient> | null {
   if (isMockMode || !BUYER_PRIVATE_KEY) return null;
-  if (!gatewayClient) {
-    gatewayClient = new GatewayClient({
+  if (!_gatewayClient) {
+    _gatewayClient = new GatewayClient({
       chain: ARC_SDK_CHAIN,
       privateKey: BUYER_PRIVATE_KEY as `0x${string}`,
       rpcUrl: ARC_RPC_URL,
     });
   }
-  return gatewayClient;
+  return _gatewayClient;
 }
 
+// --- Gateway redeposit loop (self-healing, with in-flight guard and retry) ---
+let _isRedepositing = false;
+
 async function redeposit(): Promise<void> {
+  if (_isRedepositing) return; // prevent concurrent deposits on same EOA
   const client = getGatewayClient();
   if (!client) return;
+
+  _isRedepositing = true;
   try {
     const balances = await client.getBalances();
     const available = balances.gateway?.available ?? 0n;
     const threshold = BigInt(Math.round(parseFloat(GATEWAY_REDEPOSIT_THRESHOLD_USDC) * 1_000_000));
+
     if (available < threshold) {
-      console.log(`[gateway] balance low (${available}), redepositing ${GATEWAY_REDEPOSIT_AMOUNT_USDC} USDC`);
-      await client.deposit(GATEWAY_REDEPOSIT_AMOUNT_USDC);
+      console.log(`[gateway] balance low (${available} atomic), redepositing ${GATEWAY_REDEPOSIT_AMOUNT_USDC} USDC`);
+
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await client.deposit(GATEWAY_REDEPOSIT_AMOUNT_USDC);
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < 2) {
+            const delayMs = 1000 * (attempt + 1);
+            console.warn(`[gateway] deposit attempt ${attempt + 1} failed, retrying in ${delayMs}ms:`, err);
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+        }
+      }
+
+      if (lastErr) {
+        console.error('[gateway] redeposit failed after 3 attempts:', lastErr);
+      }
     }
   } catch (err) {
-    console.error('[gateway] redeposit error:', err);
+    console.error('[gateway] redeposit balance check error:', err);
+  } finally {
+    _isRedepositing = false;
   }
+}
+
+// --- In-flight tracker for graceful shutdown ---
+let _inFlightCount = 0;
+let _shuttingDown = false;
+
+function trackInflight<T>(fn: () => Promise<T>): Promise<T> {
+  _inFlightCount++;
+  return fn().finally(() => { _inFlightCount--; });
 }
 
 // --- Routes ---
 
-// Health check (HMAC-protected — same auth as other internal endpoints)
-app.get('/healthz', hmacAuth, async (_req: Request, res: Response) => {
+// Health check — NOT behind hmacAuth so external monitors (ALB, UptimeRobot) can reach it
+app.get('/healthz', async (_req: Request, res: Response) => {
   const client = getGatewayClient();
   let balance = 'mock';
   let lastPayment: string | null = null;
+  let llmReachable: boolean | null = null;
 
   if (client) {
     try {
@@ -137,14 +178,35 @@ app.get('/healthz', hmacAuth, async (_req: Request, res: Response) => {
       .single();
     lastPayment = data?.created_at ?? null;
   } catch {
-    // ok
+    // no payments yet — fine
   }
 
-  res.json({ ok: true, balance, lastPayment, mockMode: isMockMode });
+  // LLM reachability check
+  if (isMockMode) {
+    llmReachable = null; // mock mode: N/A
+  } else {
+    try {
+      const { LLM_API_KEY, LLM_BASE_URL } = await import('./config.js');
+      const r = await fetch(`${LLM_BASE_URL}/models`, {
+        headers: { Authorization: `Bearer ${LLM_API_KEY}` },
+        signal: AbortSignal.timeout(4000),
+      });
+      llmReachable = r.ok;
+    } catch {
+      llmReachable = false;
+    }
+  }
+
+  res.json({ ok: true, balance, lastPayment, mockMode: isMockMode, llmReachable });
 });
 
 // Main unlock endpoint (HMAC-protected)
 app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response) => {
+  if (_shuttingDown) {
+    res.status(503).json({ decision: 'error', error: 'service shutting down' });
+    return;
+  }
+
   const { reader_id, request_id, article } = req.body as {
     reader_id?: string;
     request_id?: string;
@@ -163,7 +225,7 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
     .eq('reader_id', reader_id)
     .eq('article_slug', article.slug)
     .eq('request_id', request_id)
-    .single();
+    .maybeSingle();
 
   if (existing) {
     res.json({
@@ -175,11 +237,14 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
     return;
   }
 
-  const result = await evaluateAndPay(db, reader_id, request_id, article);
+  // Track in-flight for graceful shutdown drain
+  const result = await trackInflight(() =>
+    evaluateAndPay(db, reader_id, request_id, article, getGatewayClient())
+  );
   res.status(result.decision === 'error' ? 502 : 200).json(result);
 });
 
-// Tip endpoint (HMAC-protected)
+// Tip endpoint (HMAC-protected) — budget gate only
 app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
   const { reader_id, creator_id, amount_atomic } = req.body as {
     reader_id?: string;
@@ -192,16 +257,18 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  // Budget gate only (tip does not run LLM gates)
+  // Budget gate: both daily AND session caps (mirrors Gate 1 of evaluate-and-pay)
   const { data: reader } = await db
     .from('readers')
-    .select('spent_today_atomic, daily_budget_atomic')
+    .select('spent_today_atomic, daily_budget_atomic, spent_session_atomic, session_budget_atomic')
     .eq('user_id', reader_id)
     .single();
 
   if (reader) {
-    const ok = BigInt(reader.spent_today_atomic) + BigInt(amount_atomic) <= BigInt(reader.daily_budget_atomic);
-    if (!ok) {
+    const tip = BigInt(amount_atomic);
+    const dailyOk   = BigInt(reader.spent_today_atomic)   + tip <= BigInt(reader.daily_budget_atomic);
+    const sessionOk = BigInt(reader.spent_session_atomic) + tip <= BigInt(reader.session_budget_atomic);
+    if (!dailyOk || !sessionOk) {
       res.json({ decision: 'declined', reason: 'budget_exceeded' });
       return;
     }
@@ -227,6 +294,7 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
   }
 
   try {
+    // x402 payment — PAYMENT-SIGNATURE is attached by GatewayClient.pay(), not HMAC
     const tipUrl = `${APP_BASE_URL}/api/x402/tip/${encodeURIComponent(creator_id)}?amount=${encodeURIComponent(amount_atomic)}&r=${encodeURIComponent(reader_id)}`;
     const payResult = await client.pay(tipUrl, { method: 'GET' });
 
@@ -235,8 +303,12 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // Record spend
-    try { await db.rpc('record_reader_spend', { p_user_id: reader_id, p_amount: amount_atomic }); } catch { /* non-fatal */ }
+    // Record spend (non-fatal)
+    try {
+      await db.rpc('record_reader_spend', { p_user_id: reader_id, p_amount: amount_atomic });
+    } catch (err) {
+      console.error('[tip] record_reader_spend failed (budget counters may be stale):', err);
+    }
 
     res.json({
       decision: 'paid',
@@ -277,7 +349,7 @@ app.post('/agent/withdraw', hmacAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  // Record withdrawal attempt
+  // Record withdrawal attempt (submitted → confirmed/failed)
   const { data: withdrawal } = await db
     .from('withdrawals')
     .insert({
@@ -346,7 +418,7 @@ assertStartup()
     startWatcher(db, WATCHER_INTERVAL_MS);
     scheduleDailyReset();
 
-    // Gateway redeposit loop (every 30s)
+    // Gateway redeposit loop (~30s interval, self-healing with retry)
     setInterval(() => redeposit(), 30_000);
     redeposit().catch(console.error);
 
@@ -355,18 +427,32 @@ assertStartup()
       console.log(`[cresc-agents] mock mode: ${isMockMode}`);
     });
 
-    // Graceful shutdown: stop accepting new requests, let in-flight payments settle
+    // Graceful shutdown: stop new requests, drain in-flight payments, then exit
     process.on('SIGTERM', () => {
       console.log('[cresc-agents] SIGTERM received — shutting down gracefully');
-      server.close(() => {
-        console.log('[cresc-agents] server closed');
+      _shuttingDown = true;
+
+      const drain = (): void => {
+        if (_inFlightCount === 0) {
+          server.close(() => {
+            console.log('[cresc-agents] server closed');
+            process.exit(0);
+          });
+        } else {
+          console.log(`[cresc-agents] waiting for ${_inFlightCount} in-flight payment(s)...`);
+          setTimeout(drain, 200);
+        }
+      };
+
+      drain();
+      // Hard timeout — never wait more than 10s
+      setTimeout(() => {
+        console.warn('[cresc-agents] drain timeout — forcing exit');
         process.exit(0);
-      });
-      setTimeout(() => process.exit(0), 10_000);
+      }, 10_000);
     });
   })
   .catch((err) => {
     console.error('[startup] assertion failed — exiting:', err);
     process.exit(1);
   });
-

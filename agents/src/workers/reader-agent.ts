@@ -1,14 +1,12 @@
 // src/workers/reader-agent.ts — EC2 Reader Agent: 4 gates + x402 pay.
 // Gate 1 (Budget): deterministic, no LLM. Short-circuit on fail.
 // Gates 2-4 (Quality/Interest/Confidence): one Groq call.
-// Pay: GatewayClient.pay() with shared buyer EOA key.
+// Pay: GatewayClient.pay() using the SHARED client passed from index.ts.
+// IMPORTANT: never create a GatewayClient here — nonce collisions on shared EOA.
 
 import { GatewayClient } from '@circle-fin/x402-batching/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  ARC_SDK_CHAIN,
-  ARC_RPC_URL,
-  BUYER_PRIVATE_KEY,
   LLM_API_KEY,
   LLM_BASE_URL,
   LLM_MODEL,
@@ -35,8 +33,24 @@ export type ReaderAgentResult =
 
 type Gates = { budget: boolean; quality: number; interest: number; confidence: number };
 type PaymentInfo = { tx: string; amount_atomic: string; settled_at: string };
-
 type LLMGates = { quality: number; interest: number; confidence: number; reason: string };
+
+function validateLLMGates(raw: unknown): LLMGates {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error(`[reader-agent] LLM returned non-object: ${JSON.stringify(raw)}`);
+  }
+  const r = raw as Record<string, unknown>;
+  const quality    = typeof r.quality    === 'number' ? r.quality    : parseFloat(String(r.quality));
+  const interest   = typeof r.interest   === 'number' ? r.interest   : parseFloat(String(r.interest));
+  const confidence = typeof r.confidence === 'number' ? r.confidence : parseFloat(String(r.confidence));
+  const reason     = typeof r.reason     === 'string' ? r.reason     : '';
+  if (isNaN(quality) || isNaN(interest) || isNaN(confidence)) {
+    throw new Error(
+      `[reader-agent] LLM response missing numeric fields: ${JSON.stringify(raw)}`
+    );
+  }
+  return { quality, interest, confidence, reason };
+}
 
 async function callLLM(article: ArticleInput, readerHistory: string): Promise<LLMGates> {
   if (isMockMode || !LLM_API_KEY) {
@@ -84,7 +98,8 @@ Evaluate strictly as JSON with no prose:
 
   const json = await res.json() as { choices: { message: { content: string } }[] };
   const content = json.choices?.[0]?.message?.content ?? '{}';
-  return JSON.parse(content) as LLMGates;
+  const parsed = JSON.parse(content) as unknown;
+  return validateLLMGates(parsed);
 }
 
 async function getReaderHistory(db: SupabaseClient, readerId: string): Promise<string> {
@@ -118,25 +133,12 @@ async function getReaderHistory(db: SupabaseClient, readerId: string): Promise<s
   }
 }
 
-let gatewayClient: InstanceType<typeof GatewayClient> | null = null;
-
-function getGatewayClient(): InstanceType<typeof GatewayClient> {
-  if (!gatewayClient) {
-    if (!BUYER_PRIVATE_KEY) throw new Error('[reader-agent] BUYER_PRIVATE_KEY not set');
-    gatewayClient = new GatewayClient({
-      chain: ARC_SDK_CHAIN,
-      privateKey: BUYER_PRIVATE_KEY as `0x${string}`,
-      rpcUrl: ARC_RPC_URL,
-    });
-  }
-  return gatewayClient;
-}
-
 export async function evaluateAndPay(
   db: SupabaseClient,
   readerId: string,
   requestId: string,
-  article: ArticleInput
+  article: ArticleInput,
+  gateway: InstanceType<typeof GatewayClient> | null
 ): Promise<ReaderAgentResult> {
   const priceAtomic = BigInt(article.price_atomic);
 
@@ -162,7 +164,7 @@ export async function evaluateAndPay(
   }
 
   if (reader) {
-    const dailyOk  = BigInt(reader.spent_today_atomic)   + priceAtomic <= BigInt(reader.daily_budget_atomic);
+    const dailyOk   = BigInt(reader.spent_today_atomic)   + priceAtomic <= BigInt(reader.daily_budget_atomic);
     const sessionOk = BigInt(reader.spent_session_atomic) + priceAtomic <= BigInt(reader.session_budget_atomic);
     if (!dailyOk || !sessionOk) {
       return {
@@ -189,11 +191,17 @@ export async function evaluateAndPay(
     confidence: llmGates.confidence,
   };
 
+  console.log(
+    `[reader-agent] gates — reader=${readerId} slug=${article.slug} ` +
+    `quality=${llmGates.quality} interest=${llmGates.interest} confidence=${llmGates.confidence} reason="${llmGates.reason}"`
+  );
+
   if (
-    llmGates.quality   < QUALITY_MIN   ||
-    llmGates.interest  < INTEREST_MIN  ||
+    llmGates.quality    < QUALITY_MIN    ||
+    llmGates.interest   < INTEREST_MIN   ||
     llmGates.confidence < CONFIDENCE_MIN
   ) {
+    console.log(`[reader-agent] declined — reader=${readerId} slug=${article.slug} reason=below_threshold`);
     return {
       decision: 'declined',
       gates,
@@ -201,9 +209,9 @@ export async function evaluateAndPay(
     };
   }
 
-  // --- Pay via GatewayClient ---
-  if (isMockMode || !BUYER_PRIVATE_KEY) {
-    // Mock path: skip real payment
+  // --- Pay via shared GatewayClient ---
+  if (isMockMode || !gateway) {
+    console.log(`[reader-agent] paid (mock) — reader=${readerId} slug=${article.slug}`);
     return {
       decision: 'paid',
       gates,
@@ -212,10 +220,9 @@ export async function evaluateAndPay(
     };
   }
 
-  const client = getGatewayClient();
-  let payResult: Awaited<ReturnType<typeof client.pay>>;
+  let payResult: Awaited<ReturnType<typeof gateway.pay>>;
   try {
-    payResult = await client.pay(article.unlock_url, { method: 'GET' });
+    payResult = await gateway.pay(article.unlock_url, { method: 'GET' });
   } catch (err) {
     return { decision: 'error', error: `GatewayClient.pay failed: ${String(err)}` };
   }
@@ -224,14 +231,14 @@ export async function evaluateAndPay(
     return { decision: 'error', error: `Gateway pay returned status ${payResult.status}` };
   }
 
-  // Update reader spend
+  // Update reader spend (non-fatal if RPC fails, but always log)
   try {
     await db.rpc('record_reader_spend', {
       p_user_id: readerId,
       p_amount: article.price_atomic,
     });
-  } catch {
-    // non-fatal
+  } catch (err) {
+    console.error('[reader-agent] record_reader_spend failed (budget counters may be stale):', err);
   }
 
   const responseBody = payResult.data as { unlock_token?: string } | null;
@@ -239,6 +246,8 @@ export async function evaluateAndPay(
   if (!unlockToken) {
     return { decision: 'error', error: 'x402 route returned no unlock_token' };
   }
+
+  console.log(`[reader-agent] paid — reader=${readerId} slug=${article.slug} tx=${payResult.transaction ?? '?'}`);
 
   return {
     decision: 'paid',

@@ -25,6 +25,38 @@ export type WithdrawParams = {
   amountAtomic: bigint;
 };
 
+// CCTP V2 domain numbers. Arc Testnet = 26. Add chains as needed.
+// Reference: https://developers.circle.com/stablecoins/docs/cctp-technical-reference
+const CCTP_DOMAIN_MAP: Record<string, number> = {
+  'arc':          26,
+  'arc-testnet':  26,
+  'arctestnet':   26,
+  'ethereum':     0,
+  'eth':          0,
+  'avalanche':    1,
+  'avax':         1,
+  'op-mainnet':   2,
+  'optimism':     2,
+  'op':           2,
+  'arbitrum':     3,
+  'arb':          3,
+  'base':         6,
+  'polygon':      7,
+  'matic':        7,
+};
+
+function getCctpDomain(chain: string): number {
+  const key = chain.toLowerCase().replace(/[\s_]/g, '-');
+  const domain = CCTP_DOMAIN_MAP[key];
+  if (domain === undefined) {
+    throw new Error(
+      `[withdraw] Unknown destination chain: "${chain}". ` +
+      `Supported: ${Object.keys(CCTP_DOMAIN_MAP).join(', ')}`
+    );
+  }
+  return domain;
+}
+
 let _client: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;
 
 function getClient() {
@@ -39,8 +71,10 @@ function getClient() {
 
 async function pollTransaction(txId: string): Promise<string> {
   const client = getClient();
-  for (let i = 0; i < 60; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
+  // Exponential backoff: 2s, 4s, 6s, 8s... capped at 10s, up to 120s total
+  for (let i = 0; i < 30; i++) {
+    const delayMs = Math.min(2000 + i * 2000, 10_000);
+    await new Promise((r) => setTimeout(r, delayMs));
     const res = await client.getTransaction({ id: txId });
     const tx = res.data?.transaction;
     if (!tx) continue;
@@ -49,11 +83,10 @@ async function pollTransaction(txId: string): Promise<string> {
       throw new Error(`[withdraw] transaction ${txId} ${tx.state}: ${tx.errorReason ?? ''}`);
     }
   }
-  throw new Error(`[withdraw] transaction ${txId} timed out`);
+  throw new Error(`[withdraw] transaction ${txId} timed out after ~120s`);
 }
 
-// EIP-712 domain / types for BurnIntent (CLAUDE.md §GATEWAY, Arc domain = 26)
-const ARC_DOMAIN = 26;
+// EIP-712 domain / types for BurnIntent (CLAUDE.md §GATEWAY)
 const EIP712_BURN_DOMAIN = { name: 'GatewayWallet', version: '1' };
 const BURN_INTENT_TYPES = {
   TransferSpec: [
@@ -84,7 +117,22 @@ function addressToBytes32(addr: string): `0x${string}` {
 }
 
 export async function executeWithdraw(params: WithdrawParams): Promise<string> {
-  const { walletId, walletAddress, destinationAddress, amountAtomic } = params;
+  const { walletId, walletAddress, destinationAddress, destinationChain, amountAtomic } = params;
+
+  const sourceDomain = 26; // Arc Testnet is always the source
+  const destinationDomain = getCctpDomain(destinationChain); // correctly mapped from chain name
+
+  if (destinationDomain !== sourceDomain) {
+    // Cross-chain CCTP V2 mint requires native gas on the destination chain.
+    // The creator's Circle wallet on the destination chain must have gas.
+    // Verify this before initiating — a failed mint wastes the burn fee.
+    console.warn(
+      `[withdraw] Cross-chain withdrawal to domain ${destinationDomain} (${destinationChain}). ` +
+      `Ensure the creator wallet ${walletAddress} has native gas on the destination chain ` +
+      `before the gatewayMint transaction is broadcast.`
+    );
+  }
+
   const client = getClient();
 
   const maxFee = 2_010_000n;
@@ -93,16 +141,16 @@ export async function executeWithdraw(params: WithdrawParams): Promise<string> {
     maxFee,
     spec: {
       version: 1,
-      sourceDomain: ARC_DOMAIN,
-      destinationDomain: ARC_DOMAIN,
-      sourceContract: addressToBytes32(GATEWAY_WALLET_ADDRESS),
-      destinationContract: addressToBytes32(GATEWAY_MINTER_ADDRESS),
-      sourceToken: addressToBytes32(USDC_ADDRESS),
-      destinationToken: addressToBytes32(USDC_ADDRESS),
-      sourceDepositor: addressToBytes32(walletAddress),
-      destinationRecipient: addressToBytes32(destinationAddress),
-      sourceSigner: addressToBytes32(walletAddress),
-      destinationCaller: addressToBytes32(zeroAddress),
+      sourceDomain,
+      destinationDomain,
+      sourceContract:        addressToBytes32(GATEWAY_WALLET_ADDRESS),
+      destinationContract:   addressToBytes32(GATEWAY_MINTER_ADDRESS),
+      sourceToken:           addressToBytes32(USDC_ADDRESS),
+      destinationToken:      addressToBytes32(USDC_ADDRESS),
+      sourceDepositor:       addressToBytes32(walletAddress),
+      destinationRecipient:  addressToBytes32(destinationAddress),
+      sourceSigner:          addressToBytes32(walletAddress),
+      destinationCaller:     addressToBytes32(zeroAddress),
       value: amountAtomic,
       salt: `0x${randomBytes(32).toString('hex')}` as `0x${string}`,
       hookData: '0x' as `0x${string}`,
@@ -110,7 +158,6 @@ export async function executeWithdraw(params: WithdrawParams): Promise<string> {
   };
 
   // Sign BurnIntent via Circle MPC signTypedData.
-  // Circle SDK requires `data: string` (JSON-serialized EIP-712 struct with EIP712Domain in types).
   const serialize = (v: unknown): unknown =>
     typeof v === 'bigint'
       ? v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v.toString()
@@ -122,7 +169,7 @@ export async function executeWithdraw(params: WithdrawParams): Promise<string> {
   const eip712Data = serialize({
     types: {
       EIP712Domain: [
-        { name: 'name', type: 'string' },
+        { name: 'name',    type: 'string' },
         { name: 'version', type: 'string' },
       ],
       ...BURN_INTENT_TYPES,
@@ -140,7 +187,7 @@ export async function executeWithdraw(params: WithdrawParams): Promise<string> {
   const { signature } = signResp.data as { signature: string };
   if (!signature) throw new Error('[withdraw] signTypedData returned no signature');
 
-  // POST BurnIntent to Gateway /transfer
+  // POST BurnIntent to Gateway /transfer for attestation
   const transferRes = await fetch(`${GATEWAY_FACILITATOR_URL}/transfer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -155,7 +202,7 @@ export async function executeWithdraw(params: WithdrawParams): Promise<string> {
     throw new Error(`[withdraw] Gateway /transfer error: ${JSON.stringify(transferJson)}`);
   }
 
-  // Call gatewayMint on GatewayMinter via Circle
+  // Call gatewayMint on GatewayMinter via Circle (handles cross-chain dispatch)
   const mintResp = await client.createContractExecutionTransaction({
     walletId,
     contractAddress: GATEWAY_MINTER_ADDRESS,

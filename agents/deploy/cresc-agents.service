@@ -21,13 +21,16 @@ ExecStart=/home/ec2-user/Cresc/agents/node_modules/.bin/tsx src/index.ts
 #   sudo chmod 600 /etc/cresc-agents.env && sudo chown root:root /etc/cresc-agents.env
 EnvironmentFile=/etc/cresc-agents.env
 
-Restart=on-failure
+Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=cresc-agents
 
-# Give the worker time to finish in-flight jobs on shutdown
+# Memory limit — recycle on leaks (arch §EC2 production hygiene)
+MemoryMax=500M
+
+# Give the worker time to finish in-flight payments on shutdown
 TimeoutStopSec=30
 
 [Install]

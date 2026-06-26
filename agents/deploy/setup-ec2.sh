@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# One-time EC2 setup script. Run once as ubuntu user after SSH-ing in.
+# One-time EC2 setup script. Run once after SSH-ing in (works for both ec2-user and ubuntu AMIs).
 # Usage: bash setup-ec2.sh <repo-ssh-clone-url>
 # Example: bash setup-ec2.sh git@github.com:SachPlayZ/Cresc.git
 set -euo pipefail
 
 REPO_URL="${1:-}"
 APP_DIR="$HOME/Cresc"
+CURRENT_USER="$(whoami)"
 
 if [[ -z "$REPO_URL" ]]; then
   echo "Usage: $0 <repo-ssh-or-https-clone-url>"
@@ -51,11 +52,11 @@ sed "s|/home/ubuntu/Cresc|$APP_DIR|g" \
 sudo systemctl daemon-reload
 sudo systemctl enable cresc-agents
 
-# --- Allow ubuntu to restart the service without a password ---
-SUDOERS_LINE="ubuntu ALL=(ALL) NOPASSWD: /bin/systemctl restart cresc-agents, /bin/systemctl status cresc-agents"
+# --- Allow current user to restart the service without a password ---
+SUDOERS_LINE="${CURRENT_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart cresc-agents, /bin/systemctl status cresc-agents"
 if ! sudo grep -qF 'cresc-agents' /etc/sudoers; then
   echo "$SUDOERS_LINE" | sudo tee -a /etc/sudoers > /dev/null
-  echo "Added sudoers rule for systemctl restart cresc-agents."
+  echo "Added sudoers rule for ${CURRENT_USER} to restart cresc-agents."
 fi
 
 echo ""
