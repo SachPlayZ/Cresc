@@ -261,7 +261,7 @@ pay  IFF  budget_ok
 ```
 Thresholds are env-configurable. **Build thresholded first, then let Groq drive** — the agency score (30%) rewards the model genuinely deciding, so once the loop works, widen the model's latitude (e.g. let it choose to pay slightly below threshold when interest is exceptional, and log why).
 
-**Mock mode:** if `LLM_API_KEY` is unset, return deterministic stub scores (e.g. `quality 0.7, interest 0.7, confidence 85`) so the pay loop is testable without Groq. Mirrors the reference repo's mock fallback.
+**Mock mode:** if `GROQ_API_KEY` is unset, return deterministic stub scores (e.g. `quality 0.7, interest 0.7, confidence 85`) so the pay loop is testable without Groq. Mirrors the reference repo's mock fallback.
 
 ### Watcher — the pricing function
 
@@ -301,7 +301,7 @@ Output of the audit step is the **audited counts** the Watcher reads — never t
 | Agents | Node/TS services on **EC2**, PM2/systemd | Always-on; hold the buyer signing key + redeposit loop |
 | Buyer signing (x402) | `viem` + `@circle-fin/x402-batching` (raw `BUYER_PRIVATE_KEY`) | `ecrecover` forces a raw-key EOA — no SDK substitute |
 | Creator wallets + payout | **`@circle-fin/developer-controlled-wallets`** (`signTypedData` + `createContractExecutionTransaction`) | No raw key; Circle signs burn intent for withdrawal |
-| LLM (agent decisions) | **Groq**, OpenAI-compatible (`LLM_BASE_URL`/`LLM_MODEL`) | In your env; fast + cheap for gate calls. Omit key -> deterministic mock mode |
+| Groq (agent decisions) | **Groq**, OpenAI-compatible (`GROQ_BASE_URL`/`GROQ_MODEL`) | In your env; fast + cheap for gate calls. Omit key -> deterministic mock mode |
 | State | **Supabase** Postgres | Budgets, payments, telemetry, realtime dashboard |
 | Blobs | **S3** | Unlocked content, raw telemetry logs |
 | Cross-chain payout | **CCTP V2** | Docs flag V1 as legacy |
@@ -411,7 +411,7 @@ Single source of truth so the two deploy targets agree. **Names matter** — ali
 | `CIRCLE_ENTITY_SECRET` | (your env's `ENTITY_SECRET`) — SDK auth. |
 | `CIRCLE_WALLET_SET_ID` | Wallet set creators are provisioned under. |
 | `GATEWAY_MINTER_ADDRESS` = `0x0022…475B` | `gatewayMint` on withdrawal. |
-| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | Groq. Omit `LLM_API_KEY` → mock mode (§5a). |
+| `GROQ_API_KEY` / `GROQ_BASE_URL` / `GROQ_MODEL` | Groq. Omit `GROQ_API_KEY` → mock mode (§5a). |
 | `QUALITY_MIN` / `INTEREST_MIN` / `CONFIDENCE_MIN` | Gate thresholds (defaults 0.5 / 0.5 / 80). |
 | `PRICE_MIN_ATOMIC` / `PRICE_MAX_ATOMIC` / `W_VIEWS` / `W_DWELL` / `W_TIPS` | Watcher tuning (§5a). |
 | `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `S3_BUCKET` | Content + log storage. |

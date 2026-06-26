@@ -3,14 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount } from "wagmi";
 import Link from "next/link";
 
 type Theme = "dark" | "light";
-type DemoType = "article" | "photo" | "video" | "art";
-type DemoStage = "idle" | "locked" | "paying" | "settling" | "unlocked";
-
 interface TickerItem {
   title: string;
   medium: string;
@@ -22,40 +17,6 @@ interface LogEntry {
   time: string;
   text: string;
 }
-
-const TYPES: Record<
-  DemoType,
-  { label: string; medium: string; title: string; meta: string; price: number }
-> = {
-  article: {
-    label: "Article",
-    medium: "ARTICLE",
-    title: "The Last Honest Metric",
-    meta: "1,200 words · Dana Okafor",
-    price: 0.0082,
-  },
-  photo: {
-    label: "Photo",
-    medium: "PHOTO",
-    title: "Static, 04:12",
-    meta: "4000×6000 · Imo Eshet",
-    price: 0.014,
-  },
-  video: {
-    label: "Video",
-    medium: "VIDEO",
-    title: "Field Notes, Ep. 9",
-    meta: "8 min · Studio Vesper",
-    price: 0.021,
-  },
-  art: {
-    label: "Art",
-    medium: "ARTWORK",
-    title: "Untitled (Lime)",
-    meta: "Edition 1/1 · K. Owusu",
-    price: 0.0305,
-  },
-};
 
 const SEED_HISTORY = [
   0.011, 0.0118, 0.0112, 0.012, 0.0124, 0.0119, 0.0128, 0.013, 0.0126,
@@ -879,40 +840,32 @@ function StatsSection() {
 }
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "dark";
+    try {
+      const saved = localStorage.getItem("cresc-theme");
+      return saved === "dark" || saved === "light" ? saved : "dark";
+    } catch {
+      return "dark";
+    }
+  });
   const [loaded, setLoaded] = useState(false);
-  const [creatorId, setCreatorId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isConnected || !address) {
-      setCreatorId(null);
-      return;
+  const [creatorId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return localStorage.getItem("cresc_creator_id");
+    } catch {
+      return null;
     }
-    const stored = localStorage.getItem("cresc_creator_id");
-    const storedWallet = localStorage.getItem("cresc_wallet");
-    if (stored && storedWallet === address.toLowerCase()) {
-      setCreatorId(stored);
-      return;
+  });
+  const [ucwWallet] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return localStorage.getItem("cresc_ucw_wallet");
+    } catch {
+      return null;
     }
-    fetch(`/api/creator?wallet=${address.toLowerCase()}`)
-      .then((res) => {
-        if (res.ok) return res.json();
-        throw new Error();
-      })
-      .then((data: any) => {
-        if (data && data.creator && data.creator.id) {
-          localStorage.setItem("cresc_creator_id", data.creator.id);
-          localStorage.setItem("cresc_wallet", address.toLowerCase());
-          setCreatorId(data.creator.id);
-        } else {
-          setCreatorId(null);
-        }
-      })
-      .catch(() => {
-        setCreatorId(null);
-      });
-  }, [address, isConnected]);
+  });
 
   const [price, setPrice] = useState(0.014);
   const [displayed, setDisplayed] = useState(0.014);
@@ -932,17 +885,16 @@ export default function Home() {
 
   const priceRef = useRef(price);
   const displayedRef = useRef(displayed);
-  priceRef.current = price;
-  displayedRef.current = displayed;
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("cresc-theme") as Theme;
-      if (saved === "dark" || saved === "light") setTheme(saved);
-    } catch {}
     const t = setTimeout(() => setLoaded(true), 1850);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    priceRef.current = price;
+    displayedRef.current = displayed;
+  }, [displayed, price]);
 
   useEffect(() => {
     const nav = navRef.current;
@@ -1243,22 +1195,23 @@ export default function Home() {
               }}
             />
           </button>
-          <ConnectButton />
-          
-          {isConnected && (
-            <Link href="/history" style={{ display: "inline-flex" }}>
-              <Button
-                className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
-                style={{
-                  height: 38,
-                  color: "var(--c-text)",
-                  border: "1px solid var(--c-border)",
-                  background: "transparent",
-                }}
-              >
-                My History
-              </Button>
-            </Link>
+          {ucwWallet && (
+            <span
+              style={{
+                height: 38,
+                display: "inline-flex",
+                alignItems: "center",
+                border: "1px solid var(--c-border)",
+                borderRadius: 999,
+                padding: "0 14px",
+                fontFamily: "var(--font-jetbrains), monospace",
+                fontSize: 12,
+                color: "var(--c-muted)",
+                background: "var(--c-surface-2)",
+              }}
+            >
+              UCW {ucwWallet.slice(0, 6)}…{ucwWallet.slice(-4)}
+            </span>
           )}
 
           {creatorId ? (
@@ -1292,7 +1245,7 @@ export default function Home() {
             </>
           ) : (
             <>
-              <Link href="/onboard" style={{ display: "inline-flex" }}>
+              <Link href="/ghost-onboard" style={{ display: "inline-flex" }}>
                 <Button
                   className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
                   style={{
@@ -1305,7 +1258,7 @@ export default function Home() {
                   Join as Creator
                 </Button>
               </Link>
-              <Link href="/browse" style={{ textDecoration: "none", display: "inline-flex" }}>
+              <Link href="/ghost-onboard" style={{ textDecoration: "none", display: "inline-flex" }}>
                 <Button
                   className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
                   style={{

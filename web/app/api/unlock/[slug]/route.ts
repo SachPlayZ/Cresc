@@ -5,7 +5,7 @@
 // 4. On declined: return reason for gate that failed.
 // 5. On error: 502.
 //
-// This route makes zero LLM calls (CLAUDE.md invariant §3: read path never blocks on agent).
+// This route makes zero Groq calls; read path never blocks on model inference.
 
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
@@ -40,7 +40,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const body = await req.json() as { reader_id?: string };
+  const body = await req.json() as { reader_id?: string; request_id?: string };
   const readerId = body.reader_id;
 
   if (!readerId) {
@@ -56,7 +56,7 @@ export async function POST(
   const creatorWallet = article.creators?.eoa_address ?? '';
 
   // Request ID for idempotency (CLAUDE.md invariant §9)
-  const requestId = crypto.randomUUID();
+  const requestId = body.request_id ?? crypto.randomUUID();
 
   const agentPayload = {
     reader_id: readerId,

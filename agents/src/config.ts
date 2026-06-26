@@ -29,8 +29,6 @@ function parseNumber(key: string, fallback: number): number {
   return n;
 }
 
-export const isMockMode: boolean = !getEnv('LLM_API_KEY');
-
 export const SUPABASE_URL: string = getEnv('SUPABASE_URL') ?? getEnv('NEXT_PUBLIC_SUPABASE_URL') ?? '';
 export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
@@ -38,16 +36,20 @@ export const ARC_RPC_URL: string = getEnv('ARC_RPC_URL') ?? '';
 
 // The ONE raw key in the system. Lives only on EC2. SELLER_PRIVATE_KEY stays empty (Circle wallet).
 export const BUYER_PRIVATE_KEY: string = getEnv('BUYER_PRIVATE_KEY') ?? '';
+export const isPaymentMockMode: boolean = !ARC_RPC_URL || !BUYER_PRIVATE_KEY;
 
 // Circle developer-controlled wallets (creator payouts)
 export const CIRCLE_API_KEY: string = getEnv('CIRCLE_API_KEY') ?? '';
 export const CIRCLE_ENTITY_SECRET: string = getEnv('CIRCLE_ENTITY_SECRET') ?? getEnv('ENTITY_SECRET') ?? '';
 export const CIRCLE_WALLET_SET_ID: string = getEnv('CIRCLE_WALLET_SET_ID') ?? '';
 
-// LLM — Groq via OpenAI-compatible API
-export const LLM_API_KEY: string = getEnv('LLM_API_KEY') ?? '';
-export const LLM_BASE_URL: string = getEnv('LLM_BASE_URL') ?? 'https://api.groq.com/openai/v1';
-export const LLM_MODEL: string = getEnv('LLM_MODEL') ?? 'llama-3.3-70b-versatile';
+// Groq via OpenAI-compatible API.
+export const GROQ_API_KEY: string = getEnv('GROQ_API_KEY') ?? '';
+export const GROQ_BASE_URL: string =
+  getEnv('GROQ_BASE_URL') ?? 'https://api.groq.com/openai/v1';
+export const GROQ_MODEL: string =
+  getEnv('GROQ_MODEL') ?? 'llama-3.3-70b-versatile';
+export const isGroqMockMode: boolean = !GROQ_API_KEY;
 
 // Internal HMAC (Vercel↔EC2)
 export const INTERNAL_HMAC_SECRET: string = getEnv('INTERNAL_HMAC_SECRET') ?? '';
@@ -82,11 +84,13 @@ export function validateAgentConfig(): void {
   if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error('[config] Missing SUPABASE_SERVICE_ROLE_KEY');
   if (!INTERNAL_HMAC_SECRET) throw new Error('[config] Missing INTERNAL_HMAC_SECRET');
   if (!APP_BASE_URL) throw new Error('[config] Missing APP_BASE_URL (Vercel URL for tip x402 endpoint)');
-  if (isMockMode) {
-    console.warn('[config] LLM_API_KEY not set — mock mode active (deterministic stubs)');
-    return;
+  if (isGroqMockMode) {
+    console.warn('[config] GROQ_API_KEY not set — Groq gate scores use deterministic stubs');
   }
-  requireEnv('LLM_API_KEY');
-  requireEnv('ARC_RPC_URL');
-  requireEnv('BUYER_PRIVATE_KEY');
+  if (isPaymentMockMode) {
+    console.warn('[config] ARC_RPC_URL or BUYER_PRIVATE_KEY missing — payment path returns deterministic stubs');
+  } else {
+    requireEnv('ARC_RPC_URL');
+    requireEnv('BUYER_PRIVATE_KEY');
+  }
 }

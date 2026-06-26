@@ -7,14 +7,9 @@
 // Called by GatewayClient.pay() on EC2 after /agent/tip budget gate passes.
 
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'node:crypto';
 import { createServerClient } from '../../../../../lib/db';
 import { buildPaymentRequirements, verifyAndSettle } from '../../../../../lib/circle/index';
-import {
-  INTERNAL_HMAC_SECRET,
-  ARC_CAIP2,
-} from '../../../../../lib/config';
-import { fromBaseUnits } from '../../../../../lib/money';
+import { ARC_CAIP2 } from '../../../../../lib/config';
 
 export async function GET(
   req: NextRequest,

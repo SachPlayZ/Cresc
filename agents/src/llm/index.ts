@@ -1,12 +1,12 @@
 // keep-in-sync: Cresc/lib/llm/index.ts
 import Groq from 'groq-sdk';
-import { isMockMode, LLM_API_KEY, LLM_MODEL } from '../config.js';
+import { isGroqMockMode, GROQ_API_KEY, GROQ_MODEL } from '../config.js';
 
 let _client: Groq | null = null;
 
 function getClient(): Groq {
   if (!_client) {
-    _client = new Groq({ apiKey: LLM_API_KEY });
+    _client = new Groq({ apiKey: GROQ_API_KEY });
   }
   return _client;
 }
@@ -46,8 +46,8 @@ const MOCK_TIP_SKIP = JSON.stringify({
 export async function complete(prompt: string, opts: CompleteOptions = {}): Promise<string> {
   const { json = false, systemPrompt, maxTokens = 1024 } = opts;
 
-  if (isMockMode) {
-    if (!json) return 'Mock mode: set LLM_API_KEY in .env.local for real agents.';
+  if (isGroqMockMode) {
+    if (!json) return 'Mock mode: set GROQ_API_KEY in .env.local for real Groq calls.';
     const lower = prompt.toLowerCase();
     if (lower.includes('tip') && lower.includes('skip')) return MOCK_TIP_SKIP;
     if (lower.includes('tip')) return MOCK_TIP_DECISION;
@@ -60,7 +60,7 @@ export async function complete(prompt: string, opts: CompleteOptions = {}): Prom
 
   // Use streaming to collect the response chunk by chunk
   const stream = await getClient().chat.completions.create({
-    model: LLM_MODEL,
+    model: GROQ_MODEL,
     messages,
     max_tokens: maxTokens,
     stream: true,
@@ -72,6 +72,6 @@ export async function complete(prompt: string, opts: CompleteOptions = {}): Prom
     content += chunk.choices[0]?.delta?.content ?? '';
   }
 
-  if (!content) throw new Error('[llm] Empty response from Groq API');
+  if (!content) throw new Error('[groq] Empty response from Groq API');
   return content;
 }

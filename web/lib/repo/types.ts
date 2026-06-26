@@ -1,4 +1,4 @@
-// lib/repo/types.ts — DB row types. Money = atomic bigint (6-dec USDC). $0.05 = 50000.
+// lib/repo/types.ts — DB row types. Money = atomic bigint strings (6-dec USDC). $0.05 = "50000".
 
 // --- New architecture types ---
 
@@ -8,8 +8,8 @@ export type Article = {
   title: string;
   excerpt: string;
   topics: string[];
-  base_price_atomic: number;
-  current_price_atomic: number;
+  base_price_atomic: string;
+  current_price_atomic: string;
   ghost_post_id: string | null;
   ghost_instance_url: string | null;
   created_at: string;
@@ -20,10 +20,10 @@ export type Article = {
 
 export type Reader = {
   user_id: string;
-  daily_budget_atomic: number;
-  session_budget_atomic: number;
-  spent_today_atomic: number;
-  spent_session_atomic: number;
+  daily_budget_atomic: string;
+  session_budget_atomic: string;
+  spent_today_atomic: string;
+  spent_session_atomic: string;
   session_reset_at: string;
   created_at: string;
 };
@@ -55,7 +55,7 @@ export type PaymentEvent = {
 export type PriceHistory = {
   id: string;
   article_slug: string;
-  price_atomic: number;
+  price_atomic: string;
   reason: { views_norm: number; dwell_norm: number; tips_norm: number; demand: number };
   ts: string;
 };
@@ -63,7 +63,7 @@ export type PriceHistory = {
 export type Withdrawal = {
   id: string;
   creator_id: string;
-  amount_atomic: number;
+  amount_atomic: string;
   destination_chain: string;
   destination_address: string;
   status: 'submitted' | 'confirmed' | 'failed';
@@ -80,6 +80,7 @@ export type Creator = {
   created_at: string;
   circle_wallet_id?: string | null;
   eoa_address?: string | null;
+  ucw_user_id?: string | null;
   ghost_key_enc?: string | null;
   ghost_instance_url?: string | null;
   ghost_admin_key?: string | null;

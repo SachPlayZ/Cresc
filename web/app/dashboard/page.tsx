@@ -8,6 +8,7 @@ import { listArticlesByCreator, getCreator } from "../../lib/repo/index";
 import type { Article, Creator } from "../../lib/repo/types";
 import { fromBaseUnits, toDisplay } from "../../lib/money";
 import { USDC_ERC20_DECIMALS } from "../../lib/config";
+import { WithdrawSection } from "../../components/WithdrawSection";
 
 export const metadata: Metadata = { title: "Dashboard — Cresc" };
 
@@ -23,7 +24,7 @@ export default async function DashboardPage({
 
   let creator: Creator | null = null;
   let articles: Article[] = [];
-  let earningsBySlug: Record<string, bigint> = {};
+  const earningsBySlug: Record<string, bigint> = {};
   let totalEarnings = 0n;
 
   if (creatorId) {
@@ -52,8 +53,8 @@ export default async function DashboardPage({
     }
   }
 
-  const fmt = (atomic: bigint | number) =>
-    toDisplay(fromBaseUnits(BigInt(atomic), USDC_ERC20_DECIMALS));
+  const fmt = (atomic: bigint | string | number) =>
+    toDisplay(fromBaseUnits(BigInt(String(atomic)), USDC_ERC20_DECIMALS));
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -142,19 +143,7 @@ export default async function DashboardPage({
           </div>
         )}
 
-        {/* Withdraw */}
-        {creator?.eoa_address && (
-          <div className="rounded-xl border px-6 py-5 space-y-3" style={{ border: '1px solid var(--c-border)', background: 'var(--c-surface)' }}>
-            <div className="font-semibold text-sm">Withdraw earnings</div>
-            <div className="font-mono text-xs text-muted-foreground">
-              Creator wallet: {creator.eoa_address.slice(0, 10)}…{creator.eoa_address.slice(-6)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Withdrawals routed through EC2 → Circle Gateway → CCTP V2 cross-chain.
-              Call the dashboard withdraw API to initiate.
-            </p>
-          </div>
-        )}
+        {creator && <WithdrawSection creator={creator} />}
 
       </div>
     </main>

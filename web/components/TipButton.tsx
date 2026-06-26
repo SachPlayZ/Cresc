@@ -5,20 +5,20 @@ import { useState } from "react";
 interface TipButtonProps {
   creatorId: string;
   creatorName: string;
-  defaultAmountAtomic: number; // suggested tip = 50% of article price
+  defaultAmountAtomic: string; // suggested tip = 50% of article price
 }
 
 const PRESET_AMOUNTS = [
-  { label: "$0.01", atomic: 10000 },
-  { label: "$0.05", atomic: 50000 },
-  { label: "$0.10", atomic: 100000 },
+  { label: "$0.01", atomic: "10000" },
+  { label: "$0.05", atomic: "50000" },
+  { label: "$0.10", atomic: "100000" },
 ];
 
 export function TipButton({ creatorId, creatorName, defaultAmountAtomic }: TipButtonProps) {
   const [state, setState] = useState<'idle' | 'paying' | 'paid' | 'declined' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState(
-    PRESET_AMOUNTS.find((p) => p.atomic >= defaultAmountAtomic)?.atomic ?? PRESET_AMOUNTS[1].atomic
+    PRESET_AMOUNTS.find((p) => BigInt(p.atomic) >= BigInt(defaultAmountAtomic))?.atomic ?? PRESET_AMOUNTS[1].atomic
   );
 
   function getReaderId(): string {
@@ -38,7 +38,7 @@ export function TipButton({ creatorId, creatorName, defaultAmountAtomic }: TipBu
         body: JSON.stringify({
           reader_id: getReaderId(),
           creator_id: creatorId,
-          amount_atomic: String(selected),
+          amount_atomic: selected,
         }),
       });
       const data = await res.json() as { decision?: string; reason?: string; error?: string };

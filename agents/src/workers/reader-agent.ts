@@ -1,5 +1,5 @@
 // src/workers/reader-agent.ts — EC2 Reader Agent: 4 gates + x402 pay.
-// Gate 1 (Budget): deterministic, no LLM. Short-circuit on fail.
+// Gate 1 (Budget): deterministic, no Groq call. Short-circuit on fail.
 // Gates 2-4 (Quality/Interest/Confidence): one Groq call.
 // Pay: GatewayClient.pay() using the SHARED client passed from index.ts.
 // IMPORTANT: never create a GatewayClient here — nonce collisions on shared EOA.
@@ -7,13 +7,14 @@
 import { GatewayClient } from '@circle-fin/x402-batching/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  LLM_API_KEY,
-  LLM_BASE_URL,
-  LLM_MODEL,
+  GROQ_API_KEY,
+  GROQ_BASE_URL,
+  GROQ_MODEL,
   QUALITY_MIN,
   INTEREST_MIN,
   CONFIDENCE_MIN,
-  isMockMode,
+  isGroqMockMode,
+  isPaymentMockMode,
 } from '../config.js';
 
 export type ArticleInput = {
@@ -33,11 +34,11 @@ export type ReaderAgentResult =
 
 type Gates = { budget: boolean; quality: number; interest: number; confidence: number };
 type PaymentInfo = { tx: string; amount_atomic: string; settled_at: string };
-type LLMGates = { quality: number; interest: number; confidence: number; reason: string };
+type GroqGates = { quality: number; interest: number; confidence: number; reason: string };
 
-function validateLLMGates(raw: unknown): LLMGates {
+function validateGroqGates(raw: unknown): GroqGates {
   if (!raw || typeof raw !== 'object') {
-    throw new Error(`[reader-agent] LLM returned non-object: ${JSON.stringify(raw)}`);
+    throw new Error(`[reader-agent] Groq returned non-object: ${JSON.stringify(raw)}`);
   }
   const r = raw as Record<string, unknown>;
   const quality    = typeof r.quality    === 'number' ? r.quality    : parseFloat(String(r.quality));
@@ -46,14 +47,14 @@ function validateLLMGates(raw: unknown): LLMGates {
   const reason     = typeof r.reason     === 'string' ? r.reason     : '';
   if (isNaN(quality) || isNaN(interest) || isNaN(confidence)) {
     throw new Error(
-      `[reader-agent] LLM response missing numeric fields: ${JSON.stringify(raw)}`
+      `[reader-agent] Groq response missing numeric fields: ${JSON.stringify(raw)}`
     );
   }
   return { quality, interest, confidence, reason };
 }
 
-async function callLLM(article: ArticleInput, readerHistory: string): Promise<LLMGates> {
-  if (isMockMode || !LLM_API_KEY) {
+async function callGroq(article: ArticleInput, readerHistory: string): Promise<GroqGates> {
+  if (isGroqMockMode || !GROQ_API_KEY) {
     return { quality: 0.7, interest: 0.7, confidence: 85, reason: 'mock mode stub' };
   }
 
@@ -76,14 +77,14 @@ Evaluate strictly as JSON with no prose:
   "reason": "<one short clause>"
 }`;
 
-  const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+  const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${LLM_API_KEY}`,
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: LLM_MODEL,
+      model: GROQ_MODEL,
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       max_tokens: 256,
@@ -93,13 +94,13 @@ Evaluate strictly as JSON with no prose:
 
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    throw new Error(`[reader-agent] LLM call failed: ${res.status} ${txt.slice(0, 200)}`);
+    throw new Error(`[reader-agent] Groq call failed: ${res.status} ${txt.slice(0, 200)}`);
   }
 
   const json = await res.json() as { choices: { message: { content: string } }[] };
   const content = json.choices?.[0]?.message?.content ?? '{}';
   const parsed = JSON.parse(content) as unknown;
-  return validateLLMGates(parsed);
+  return validateGroqGates(parsed);
 }
 
 async function getReaderHistory(db: SupabaseClient, readerId: string): Promise<string> {
@@ -142,7 +143,7 @@ export async function evaluateAndPay(
 ): Promise<ReaderAgentResult> {
   const priceAtomic = BigInt(article.price_atomic);
 
-  // --- Gate 1: Budget (deterministic, no LLM) ---
+  // --- Gate 1: Budget (deterministic, no Groq call) ---
   // Auto-provision reader row if missing (default $5/day, $1/session)
   await db.from('readers').upsert({
     user_id: readerId,
@@ -175,42 +176,42 @@ export async function evaluateAndPay(
     }
   }
 
-  // --- Gates 2-4: Quality / Interest / Confidence (one LLM call) ---
+  // --- Gates 2-4: Quality / Interest / Confidence (one Groq call) ---
   const history = await getReaderHistory(db, readerId);
-  let llmGates: LLMGates;
+  let groqGates: GroqGates;
   try {
-    llmGates = await callLLM(article, history);
+    groqGates = await callGroq(article, history);
   } catch (err) {
     return { decision: 'error', error: String(err) };
   }
 
   const gates: Gates = {
     budget: true,
-    quality: llmGates.quality,
-    interest: llmGates.interest,
-    confidence: llmGates.confidence,
+    quality: groqGates.quality,
+    interest: groqGates.interest,
+    confidence: groqGates.confidence,
   };
 
   console.log(
     `[reader-agent] gates — reader=${readerId} slug=${article.slug} ` +
-    `quality=${llmGates.quality} interest=${llmGates.interest} confidence=${llmGates.confidence} reason="${llmGates.reason}"`
+    `quality=${groqGates.quality} interest=${groqGates.interest} confidence=${groqGates.confidence} reason="${groqGates.reason}"`
   );
 
   if (
-    llmGates.quality    < QUALITY_MIN    ||
-    llmGates.interest   < INTEREST_MIN   ||
-    llmGates.confidence < CONFIDENCE_MIN
+    groqGates.quality    < QUALITY_MIN    ||
+    groqGates.interest   < INTEREST_MIN   ||
+    groqGates.confidence < CONFIDENCE_MIN
   ) {
     console.log(`[reader-agent] declined — reader=${readerId} slug=${article.slug} reason=below_threshold`);
     return {
       decision: 'declined',
       gates,
-      reason: `below_threshold: quality=${llmGates.quality} interest=${llmGates.interest} confidence=${llmGates.confidence}`,
+      reason: `below_threshold: quality=${groqGates.quality} interest=${groqGates.interest} confidence=${groqGates.confidence}`,
     };
   }
 
   // --- Pay via shared GatewayClient ---
-  if (isMockMode || !gateway) {
+  if (isPaymentMockMode || !gateway) {
     console.log(`[reader-agent] paid (mock) — reader=${readerId} slug=${article.slug}`);
     return {
       decision: 'paid',

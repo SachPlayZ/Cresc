@@ -26,7 +26,9 @@ export function verifyHmacHeaders(
   if (skew > 300) return false;
 
   const expected = hmacSign(SECRET, timestamp, rawBody);
-  return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'));
+  const sigBuf = Buffer.from(sig, 'hex');
+  const expBuf = Buffer.from(expected, 'hex');
+  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
 }
 
 function hmacSign(secret: string, timestamp: string, rawBody: string): string {

@@ -1,12 +1,10 @@
 /**
- * lib/llm/index.ts — provider-agnostic LLM adapter.
- * M0: OpenAI SDK pointed at LLM_BASE_URL (Groq or any OpenAI-compatible endpoint).
- * isMockMode (no LLM_API_KEY) → deterministic canned response, never hits API.
- * Swapping providers = config change only (LLM_BASE_URL + LLM_MODEL).
+ * lib/llm/index.ts — Groq adapter.
+ * isMockMode (no GROQ_API_KEY) → deterministic canned response, never hits API.
  */
 
 import OpenAI from "openai";
-import { isMockMode, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL } from "../config";
+import { isMockMode, GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL } from "../config";
 
 // Lazy-init client (not created in mock mode)
 let _client: OpenAI | null = null;
@@ -14,8 +12,8 @@ let _client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!_client) {
     _client = new OpenAI({
-      apiKey: LLM_API_KEY,
-      baseURL: LLM_BASE_URL,
+      apiKey: GROQ_API_KEY,
+      baseURL: GROQ_BASE_URL,
     });
   }
   return _client;
@@ -75,7 +73,7 @@ const MOCK_TIP_SKIP = JSON.stringify({
 });
 
 /**
- * complete — single entry point for all agent LLM calls.
+ * complete — single entry point for all Groq-backed agent calls.
  *
  * @param prompt - The full prompt (caller assembles context + instruction).
  * @param opts   - Options: json mode, system prompt override, max tokens.
@@ -92,7 +90,7 @@ export async function complete(
     return getMockResponse(prompt, json);
   }
 
-  // --- Real LLM call (OpenAI-compatible, Groq endpoint) ---
+  // --- Real Groq call ---
   const client = getClient();
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
@@ -104,7 +102,7 @@ export async function complete(
   messages.push({ role: "user", content: prompt });
 
   const response = await client.chat.completions.create({
-    model: LLM_MODEL,
+    model: GROQ_MODEL,
     messages,
     max_tokens: maxTokens,
     ...(json ? { response_format: { type: "json_object" } } : {}),
@@ -112,7 +110,7 @@ export async function complete(
 
   const content = response.choices[0]?.message?.content;
   if (!content) {
-    throw new Error("[llm] Empty response from LLM API");
+    throw new Error("[groq] Empty response from Groq API");
   }
 
   return content;
@@ -126,7 +124,7 @@ function getMockResponse(prompt: string, json: boolean): string {
   const lower = prompt.toLowerCase();
 
   if (!json) {
-    return "Mock mode: LLM_API_KEY not set. Set it in .env.local to enable real agent calls.";
+    return "Mock mode: GROQ_API_KEY not set. Set it in .env.local to enable real Groq calls.";
   }
 
   // Routing by prompt keyword (agents call with different prompts)

@@ -1,7 +1,7 @@
 // GET /api/ghost/post-status?site=<creatorId>&slug=<ghostSlug>
 // Called by cresc-ghost.js on every Ghost page load. Must be <100ms.
 // Returns whether the post is paywalled in Cresc + the standing price.
-// NO LLM, NO settlement — pure DB read.
+// NO Groq, NO settlement — pure DB read.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '../../../../lib/db';
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
       .single();
 
     if (article) {
-      const price = fromBaseUnits(BigInt(article.current_price_atomic as number), USDC_ERC20_DECIMALS);
+      const price = fromBaseUnits(BigInt(String(article.current_price_atomic)), USDC_ERC20_DECIMALS);
       return NextResponse.json(
         { paywalled: true, slug: article.slug, priceDisplay: toDisplay(price) },
         { headers: CORS }

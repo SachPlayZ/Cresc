@@ -3,7 +3,7 @@
 //   1. Pre-unlock: shows price, "Pay & Read" button → calls /api/unlock/[slug] → EC2 agent
 //   2. Post-unlock (unlock_token in URL): fetches full Ghost HTML server-side, renders it.
 //
-// Content is never fetched pre-payment. LLM calls are zero on this path.
+// Content is never fetched pre-payment. Groq calls are zero on this path.
 
 import crypto from "node:crypto";
 import { redirect } from "next/navigation";
@@ -76,8 +76,9 @@ export default async function ReadPage({ searchParams }: PageProps) {
   if (!article) redirect("/");
 
   const priceDisplay = toDisplay(
-    fromBaseUnits(BigInt(article.current_price_atomic as number), USDC_ERC20_DECIMALS)
+    fromBaseUnits(BigInt(String(article.current_price_atomic)), USDC_ERC20_DECIMALS)
   );
+  const currentPriceAtomic = BigInt(String(article.current_price_atomic));
 
   // Post-unlock: token present → validate then serve content
   if (params.unlock_token) {
@@ -150,13 +151,13 @@ export default async function ReadPage({ searchParams }: PageProps) {
           </div>
         </div>
 
-        <GhostReader html={ghostHtml} />
+        <GhostReader html={ghostHtml} articleSlug={slug} />
 
         <div className="max-w-2xl mx-auto px-6 pt-10 pb-16 border-t" style={{ borderColor: "var(--c-border-soft)" }}>
           <TipButton
             creatorId={site}
             creatorName={(article.creators as { display_name: string }).display_name}
-            defaultAmountAtomic={Math.round((article.current_price_atomic as number) * 0.5)}
+            defaultAmountAtomic={(currentPriceAtomic / 2n).toString()}
           />
         </div>
       </main>

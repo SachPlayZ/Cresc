@@ -24,8 +24,8 @@ type AuditedRow = {
 
 type ArticleRow = {
   slug: string;
-  base_price_atomic: number;
-  current_price_atomic: number;
+  base_price_atomic: string | number;
+  current_price_atomic: string | number;
 };
 
 /** Compute rolling medians for normalization from recent audited windows. */
@@ -88,10 +88,12 @@ async function repriceArticle(
 
   const demand = W_VIEWS * viewsNorm + W_DWELL * dwellNorm + W_TIPS * tipsNorm;
 
-  let target = Math.round(article.base_price_atomic * (0.5 + demand));
+  const basePriceAtomic = Number(BigInt(String(article.base_price_atomic)));
+  const prev = Number(BigInt(String(article.current_price_atomic)));
+
+  let target = Math.round(basePriceAtomic * (0.5 + demand));
   target = Math.min(Math.max(target, PRICE_MIN_ATOMIC), PRICE_MAX_ATOMIC);
 
-  const prev = article.current_price_atomic;
   const newPrice = Math.min(Math.max(target, Math.round(prev * 0.8)), Math.round(prev * 1.2));
 
   if (newPrice === prev) return; // no change

@@ -1,7 +1,7 @@
 /**
  * lib/config.ts — typed, validated environment config for Cresc.
  * M0: reads all env vars from CLAUDE.md §5; throws on missing required vars (unless mock mode).
- * isMockMode = !LLM_API_KEY — agents run deterministic canned responses when true.
+ * isMockMode = !GROQ_API_KEY — agents run deterministic canned Groq-shaped responses when true.
  */
 
 // Arc Testnet constants (CLAUDE.md §4.1–4.2 ground truth — do NOT re-derive)
@@ -26,17 +26,6 @@ function getEnv(key: string): string | undefined {
   return process.env[key];
 }
 
-function requireEnv(key: string, context: string): string {
-  const val = getEnv(key);
-  if (!val) {
-    throw new Error(
-      `[config] Missing required env var: ${key} (needed for ${context}). ` +
-        `Copy .env.example → .env.local and fill it in.`
-    );
-  }
-  return val;
-}
-
 function parseNumber(key: string, fallback: number): number {
   const raw = getEnv(key);
   if (!raw) return fallback;
@@ -45,8 +34,9 @@ function parseNumber(key: string, fallback: number): number {
   return n;
 }
 
-// --- Mock mode detection (no LLM_API_KEY = mock mode) ---
-export const isMockMode: boolean = !getEnv("LLM_API_KEY");
+// --- Mock mode detection (no Groq API key = deterministic gate/audit stubs) ---
+export const GROQ_API_KEY: string = getEnv("GROQ_API_KEY") ?? "";
+export const isMockMode: boolean = !GROQ_API_KEY;
 
 // --- Supabase (always required) ---
 export const SUPABASE_URL: string = (() => {
@@ -64,33 +54,30 @@ export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv("SUPABASE_SERVICE_ROLE_K
 
 // --- Arc / Circle (server-side only — never NEXT_PUBLIC_) ---
 export const ARC_RPC_URL: string = getEnv("ARC_RPC_URL") ?? "";
-// SELLER_PRIVATE_KEY must NEVER exist on Vercel — creator/seller = Circle dev-controlled wallet (no raw key).
+// SELLER_PRIVATE_KEY must NEVER exist on Vercel — creator/seller = Circle UCW wallet (no app-held raw key).
 // BUYER_PRIVATE_KEY lives ONLY on EC2 — never import it in web code.
 // Vercel only needs BatchFacilitatorClient (keyless) for settlement.
 
-// --- Circle developer-controlled wallets (optional upgrade — replaces raw EOA keys) ---
-// When CIRCLE_API_KEY + ENTITY_SECRET are set, signPaymentAuthorization uses Circle MPC
-// signing (signTypedData) instead of viem's privateKeyToAccount. Raw EOA key path is the
-// fallback. See lib/circle/wallets.ts.
+// --- Circle API key (used for UCW backend client; legacy DCW fields remain for old paths only) ---
 export const CIRCLE_API_KEY: string = getEnv("CIRCLE_API_KEY") ?? "";
+// Legacy DCW fields — kept for wallets.ts backward compat; not used for creator wallets.
 export const ENTITY_SECRET: string = getEnv("ENTITY_SECRET") ?? "";
 export const CIRCLE_WALLET_SET_ID: string = getEnv("CIRCLE_WALLET_SET_ID") ?? "";
-// Circle-managed buyer wallet (payer for reader unlocks / tips)
 export const CIRCLE_BUYER_WALLET_ID: string = getEnv("CIRCLE_BUYER_WALLET_ID") ?? "";
 export const CIRCLE_BUYER_WALLET_ADDRESS: string = getEnv("CIRCLE_BUYER_WALLET_ADDRESS") ?? "";
-// Circle-managed seller wallet (recipient for creator payouts)
 export const CIRCLE_SELLER_WALLET_ID: string = getEnv("CIRCLE_SELLER_WALLET_ID") ?? "";
 export const CIRCLE_SELLER_WALLET_ADDRESS: string = getEnv("CIRCLE_SELLER_WALLET_ADDRESS") ?? "";
 
-// --- LLM (Groq via OpenAI-compatible API) ---
-export const LLM_API_KEY: string = getEnv("LLM_API_KEY") ?? "";
-export const LLM_BASE_URL: string =
-  getEnv("LLM_BASE_URL") ?? "https://api.groq.com/openai/v1";
-// Default: a strong instruction-following Groq model that returns clean JSON.
-// Assumption: llama-3.3-70b-versatile is the best Groq model for clean JSON reasoning as of 2026-06.
-export const LLM_MODEL: string =
-  getEnv("LLM_MODEL") ?? "llama-3.3-70b-versatile";
+// --- Circle user-controlled wallets (UCW) — creator wallet system ---
+// NEXT_PUBLIC_ so the frontend W3S SDK can initialize without a server round-trip.
+export const CIRCLE_UCW_APP_ID: string = getEnv("NEXT_PUBLIC_CIRCLE_APP_ID") ?? "";
+export const CIRCLE_GOOGLE_CLIENT_ID: string = getEnv("NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID") ?? "";
 
+// --- Groq via OpenAI-compatible API ---
+export const GROQ_BASE_URL: string =
+  getEnv("GROQ_BASE_URL") ?? "https://api.groq.com/openai/v1";
+export const GROQ_MODEL: string =
+  getEnv("GROQ_MODEL") ?? "llama-3.3-70b-versatile";
 // --- App pricing config ---
 export const PRICE_CEILING: number = parseNumber("PRICE_CEILING", 0.1);
 export const PRICE_FLOOR_MIN: number = parseNumber("PRICE_FLOOR_MIN", 0.001);
@@ -115,8 +102,7 @@ if (PRICE_FLOOR_MIN >= PRICE_CEILING) {
  */
 export function validateServerConfig(): void {
   if (!isMockMode) {
-    requireEnv("LLM_API_KEY", "LLM agent calls");
-    requireEnv("LLM_MODEL", "LLM agent calls");
+    if (!GROQ_API_KEY) throw new Error("[config] GROQ_API_KEY required for Groq agent calls");
   }
   // Payment config is required when payment routes are active (M3/M4).
   // M0 stubs these — validated in M3.

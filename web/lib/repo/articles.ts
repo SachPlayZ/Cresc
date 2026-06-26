@@ -36,8 +36,8 @@ export async function upsertGhostArticle(
     title: string;
     excerpt: string;
     topics: string[];
-    base_price_atomic: number;
-    current_price_atomic: number;
+    base_price_atomic: string | number | bigint;
+    current_price_atomic: string | number | bigint;
     ghost_post_id: string;
     ghost_instance_url: string;
   }
@@ -57,7 +57,7 @@ export async function upsertGhostArticle(
 export async function updateArticlePrice(
   db: SupabaseClient,
   slug: string,
-  currentPriceAtomic: number
+  currentPriceAtomic: string | bigint
 ): Promise<void> {
   const { error } = await db
     .from('articles')

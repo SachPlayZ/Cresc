@@ -1,20 +1,20 @@
 // src/workers/audit.ts — Creator Audit Agent.
 // Runs before Watcher consumes telemetry. Two layers:
 //   1. Deterministic pre-filter (bounce <1500ms, per-hour rate-limit, self-tip, z-score)
-//   2. LLM judgment for statistical outliers (Groq → authentic_fraction)
+//   2. Groq judgment for statistical outliers (authentic_fraction)
 // Writes to telemetry_audited via upsert — Watcher reads only audited rows.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  LLM_API_KEY,
-  LLM_BASE_URL,
-  LLM_MODEL,
-  isMockMode,
+  GROQ_API_KEY,
+  GROQ_BASE_URL,
+  GROQ_MODEL,
+  isGroqMockMode,
 } from '../config.js';
 
 const MAX_VIEWS_PER_READER_PER_HOUR = 3;
 const MIN_DWELL_MS = 1500;
-const OUTLIER_VIEW_THRESHOLD = 10; // LLM check triggers if >10 authentic views OR z-score spike
+const OUTLIER_VIEW_THRESHOLD = 10; // Groq check triggers if >10 authentic views OR z-score spike
 
 type TelemetryRow = {
   id: string;
@@ -26,7 +26,7 @@ type TelemetryRow = {
   ts: string;
 };
 
-function validateAuditLLMResult(raw: unknown): { authentic_fraction: number; reason: string } {
+function validateAuditGroqResult(raw: unknown): { authentic_fraction: number; reason: string } {
   if (!raw || typeof raw !== 'object') {
     return { authentic_fraction: 1.0, reason: 'invalid_response' };
   }
@@ -41,11 +41,11 @@ function validateAuditLLMResult(raw: unknown): { authentic_fraction: number; rea
   return { authentic_fraction: af, reason };
 }
 
-async function callAuditLLM(
+async function callAuditGroq(
   slug: string,
   pattern: string
 ): Promise<{ authentic_fraction: number; reason: string }> {
-  if (isMockMode || !LLM_API_KEY) {
+  if (isGroqMockMode || !GROQ_API_KEY) {
     return { authentic_fraction: 0.9, reason: 'mock mode stub' };
   }
 
@@ -62,14 +62,14 @@ Return JSON only:
 }`;
 
   try {
-    const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+    const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LLM_API_KEY}`,
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: LLM_MODEL,
+        model: GROQ_MODEL,
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         max_tokens: 128,
@@ -77,14 +77,14 @@ Return JSON only:
       }),
     });
 
-    if (!res.ok) return { authentic_fraction: 1.0, reason: 'llm_error' };
+    if (!res.ok) return { authentic_fraction: 1.0, reason: 'groq_error' };
 
     const json = await res.json() as { choices: { message: { content: string } }[] };
     const content = json.choices?.[0]?.message?.content ?? '{}';
     const parsed = JSON.parse(content) as unknown;
-    return validateAuditLLMResult(parsed);
+    return validateAuditGroqResult(parsed);
   } catch {
-    return { authentic_fraction: 1.0, reason: 'llm_unavailable' };
+    return { authentic_fraction: 1.0, reason: 'groq_unavailable' };
   }
 }
 
@@ -163,12 +163,12 @@ async function auditArticle(
     }
   }
 
-  // --- Layer 2: LLM judgment for outliers ---
+  // --- Layer 2: Groq judgment for outliers ---
   let authenticFraction = 1.0;
   let auditReason = 'deterministic_only';
 
-  const needsLLM = authenticViews > OUTLIER_VIEW_THRESHOLD || zScoreSpike;
-  if (needsLLM) {
+  const needsGroq = authenticViews > OUTLIER_VIEW_THRESHOLD || zScoreSpike;
+  if (needsGroq) {
     const uniqueReaders = new Set(
       typedRows.filter((r) => r.event_type === 'view').map((r) => r.reader_id)
     ).size;
@@ -181,9 +181,9 @@ async function auditArticle(
       `Z-score spike: ${zScoreSpike}`,
     ].join('\n');
 
-    const llmResult = await callAuditLLM(slug, pattern);
-    authenticFraction = llmResult.authentic_fraction;
-    auditReason = llmResult.reason;
+    const groqResult = await callAuditGroq(slug, pattern);
+    authenticFraction = groqResult.authentic_fraction;
+    auditReason = groqResult.reason;
   }
 
   // --- Tip totals: only count tips, not unlock payments ---

@@ -1,34 +1,89 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import DOMPurify from "isomorphic-dompurify";
+import { useEffect, useMemo, useRef } from "react";
 
 interface GhostReaderProps {
   html: string;
+  articleSlug?: string;
 }
 
-export function GhostReader({ html }: GhostReaderProps) {
-  const [safeHtml, setSafeHtml] = useState(html);
+export function GhostReader({ html, articleSlug }: GhostReaderProps) {
+  const sentViewRef = useRef(false);
+
+  const safeHtml = useMemo(() => {
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [
+        "p","br","b","strong","i","em","s","strike","u","a","h1","h2","h3","h4",
+        "ul","ol","li","blockquote","pre","code","img","video","source","figure",
+        "figcaption","hr","table","thead","tbody","tr","th","td",
+      ],
+      ALLOWED_ATTR: ["href","src","alt","controls","class","style","target","rel","type","width","height"],
+      ALLOW_DATA_ATTR: false,
+    });
+  }, [html]);
 
   useEffect(() => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-      const dp = require("dompurify") as any;
-      const purify: { sanitize: (h: string, cfg: Record<string, unknown>) => string } = dp.default ?? dp;
-      setSafeHtml(
-        purify.sanitize(html, {
-          ALLOWED_TAGS: [
-            "p","br","b","strong","i","em","s","strike","u","a","h1","h2","h3","h4",
-            "ul","ol","li","blockquote","pre","code","img","video","source","figure",
-            "figcaption","hr","table","thead","tbody","tr","th","td",
-          ],
-          ALLOWED_ATTR: ["href","src","alt","controls","class","style","target","rel","type","width","height"],
-          ALLOW_DATA_ATTR: false,
-        })
-      );
-    } catch {
-      setSafeHtml(html);
-    }
-  }, [html]);
+    if (!articleSlug) return;
+
+    const startedAt = Date.now();
+    sentViewRef.current = false;
+
+    const readerId = (() => {
+      try {
+        const key = "cresc_reader_id";
+        let id = localStorage.getItem(key);
+        if (!id) {
+          id = crypto.randomUUID();
+          localStorage.setItem(key, id);
+        }
+        return id;
+      } catch {
+        return "anonymous";
+      }
+    })();
+
+    const sendView = () => {
+      if (sentViewRef.current) return;
+      sentViewRef.current = true;
+      const payload = JSON.stringify({
+        reader_id: readerId,
+        article_slug: articleSlug,
+        event_type: "view",
+        dwell_ms: Math.max(0, Date.now() - startedAt),
+      });
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon("/api/telemetry", new Blob([payload], { type: "application/json" }));
+          return;
+        }
+      } catch {
+        // Fall through to fetch.
+      }
+      void fetch("/api/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    const fallbackTimer = window.setTimeout(sendView, 5000);
+    const onPageHide = () => sendView();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") sendView();
+    };
+
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      sendView();
+    };
+  }, [articleSlug]);
 
   return (
     <div className="max-w-2xl mx-auto px-6">

@@ -72,8 +72,8 @@ Stand up the always-on HTTP service + the four gates + tip flow.
 - [ ] **`POST /agent/evaluate-and-pay`** with the exact request/response shapes (arch §2a). `paid`/`declined` → `200`, `error` → `502`.
 - [ ] **Gate 1 Budget** (deterministic, no LLM): read `readers` row; fail before any LLM call if caps exceeded.
 - [ ] **Gates 2–4** via one Groq call, strict JSON `{ quality, interest, confidence, reason }`. Inputs per arch §5a (article fields + last ~20 telemetry rows summarized).
-- [ ] **Decision rule** deterministic after LLM (thresholds `QUALITY_MIN 0.5`, `INTEREST_MIN 0.5`, `CONFIDENCE_MIN 80`, env-configurable). Build thresholded first.
-- [ ] **Mock mode**: `LLM_API_KEY` unset → stub `quality 0.7, interest 0.7, confidence 85`.
+- [ ] **Decision rule** deterministic after Groq scoring (thresholds `QUALITY_MIN 0.5`, `INTEREST_MIN 0.5`, `CONFIDENCE_MIN 80`, env-configurable). Build thresholded first.
+- [ ] **Mock mode**: `GROQ_API_KEY` unset → stub `quality 0.7, interest 0.7, confidence 85`.
 - [ ] On pass: forward to the Vercel unlock route, get `402`, agent signs EIP-3009, retries, Gateway settles, return `unlock_token`.
 - [ ] **Idempotency**: key by `(reader_id, article_slug, request_id)`; check `payment_events` before signing.
 - [ ] **`POST /agent/tip`**: budget-gate only, second `pay()` to creator EOA.

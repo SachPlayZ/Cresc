@@ -4,6 +4,7 @@
 // Workers: Watcher (hourly reprice), Audit Agent (pre-Watcher telemetry filter).
 
 import express, { type Request, type Response } from 'express';
+import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { createPublicClient, http, defineChain } from 'viem';
 import { GatewayClient } from '@circle-fin/x402-batching/client';
@@ -22,11 +23,15 @@ import {
   WATCHER_INTERVAL_MS,
   AUDIT_INTERVAL_MS,
   APP_BASE_URL,
-  isMockMode,
+  INTERNAL_HMAC_SECRET,
+  GROQ_API_KEY,
+  GROQ_BASE_URL,
+  isGroqMockMode,
+  isPaymentMockMode,
 } from './config.js';
-import { captureRawBody, hmacAuth } from './middleware/hmac.js';
+import { hmacAuth } from './middleware/hmac.js';
 import { evaluateAndPay, type ArticleInput } from './workers/reader-agent.js';
-import { executeWithdraw } from './workers/withdraw.js';
+import { executeGatewayMint } from './workers/withdraw.js';
 import { startWatcher } from './workers/watcher.js';
 import { startAudit } from './workers/audit.js';
 
@@ -35,14 +40,17 @@ validateAgentConfig();
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const app = express();
 
-// Capture raw body before JSON parse (required for HMAC verification)
-app.use(captureRawBody);
-app.use(express.json());
+// Capture raw body while JSON parsing so HMAC verification and req.body both work.
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
+  },
+}));
 
 const arcTestnetChain = defineChain({
   id: ARC_CHAIN_ID,
   name: 'Arc Testnet',
-  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 6 },
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
   rpcUrls: { default: { http: [ARC_RPC_URL || 'https://arc-testnet.drpc.org'] } },
 });
 
@@ -56,15 +64,11 @@ async function assertStartup(): Promise<void> {
   if (process.env.SELLER_PRIVATE_KEY) {
     throw new Error('[startup] SELLER_PRIVATE_KEY must NOT be set on EC2 — creator = Circle wallet, no raw key');
   }
-  if (!isMockMode) {
+  if (!isPaymentMockMode) {
     if (!BUYER_PRIVATE_KEY) {
       throw new Error('[startup] BUYER_PRIVATE_KEY required in live mode');
     }
-    // 2. CIRCLE_ENTITY_SECRET required for withdrawals
-    if (!process.env.CIRCLE_ENTITY_SECRET && !process.env.ENTITY_SECRET) {
-      throw new Error('[startup] CIRCLE_ENTITY_SECRET (or ENTITY_SECRET) required for creator withdrawals');
-    }
-    // 3. Chain ID assertion
+    // 2. Chain ID assertion
     const publicClient = createPublicClient({ chain: arcTestnetChain, transport: http(ARC_RPC_URL) });
     const chainId = await publicClient.getChainId();
     if (chainId !== ARC_CHAIN_ID) {
@@ -79,7 +83,7 @@ async function assertStartup(): Promise<void> {
     if (decimals !== 6) {
       throw new Error(`[startup] USDC decimals: expected 6, got ${decimals}`);
     }
-    console.log('[startup] assertions passed: chainId=5042002, USDC decimals=6, CIRCLE_ENTITY_SECRET present');
+    console.log('[startup] assertions passed: chainId=5042002, USDC decimals=6');
   }
 }
 
@@ -87,7 +91,7 @@ async function assertStartup(): Promise<void> {
 let _gatewayClient: InstanceType<typeof GatewayClient> | null = null;
 
 export function getGatewayClient(): InstanceType<typeof GatewayClient> | null {
-  if (isMockMode || !BUYER_PRIVATE_KEY) return null;
+  if (isPaymentMockMode || !BUYER_PRIVATE_KEY) return null;
   if (!_gatewayClient) {
     _gatewayClient = new GatewayClient({
       chain: ARC_SDK_CHAIN,
@@ -96,6 +100,13 @@ export function getGatewayClient(): InstanceType<typeof GatewayClient> | null {
     });
   }
   return _gatewayClient;
+}
+
+function generateUnlockToken(slug: string, readerId: string): string {
+  const expiry = Math.floor(Date.now() / 1000) + 3600;
+  const data = `${expiry}:${slug}:${readerId}`;
+  const sig = crypto.createHmac('sha256', INTERNAL_HMAC_SECRET).update(data).digest('hex');
+  return `${data}:${sig}`;
 }
 
 // --- Gateway redeposit loop (self-healing, with in-flight guard and retry) ---
@@ -158,7 +169,7 @@ app.get('/healthz', async (_req: Request, res: Response) => {
   const client = getGatewayClient();
   let balance = 'mock';
   let lastPayment: string | null = null;
-  let llmReachable: boolean | null = null;
+  let groqReachable: boolean | null = null;
 
   if (client) {
     try {
@@ -181,23 +192,22 @@ app.get('/healthz', async (_req: Request, res: Response) => {
     // no payments yet — fine
   }
 
-  // LLM reachability check
-  if (isMockMode) {
-    llmReachable = null; // mock mode: N/A
+  // Groq reachability check
+  if (isGroqMockMode) {
+    groqReachable = null; // mock mode: N/A
   } else {
     try {
-      const { LLM_API_KEY, LLM_BASE_URL } = await import('./config.js');
-      const r = await fetch(`${LLM_BASE_URL}/models`, {
-        headers: { Authorization: `Bearer ${LLM_API_KEY}` },
+      const r = await fetch(`${GROQ_BASE_URL}/models`, {
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
         signal: AbortSignal.timeout(4000),
       });
-      llmReachable = r.ok;
+      groqReachable = r.ok;
     } catch {
-      llmReachable = false;
+      groqReachable = false;
     }
   }
 
-  res.json({ ok: true, balance, lastPayment, mockMode: isMockMode, llmReachable });
+  res.json({ ok: true, balance, lastPayment, groqMockMode: isGroqMockMode, paymentMockMode: isPaymentMockMode, groqReachable });
 });
 
 // Main unlock endpoint (HMAC-protected)
@@ -232,7 +242,7 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
       decision: 'paid',
       gates: { budget: true, quality: 1, interest: 1, confidence: 100 },
       payment: { tx: '0xalready-paid', amount_atomic: article.price_atomic, settled_at: new Date().toISOString() },
-      unlock_token: `idempotent-${request_id}`,
+      unlock_token: generateUnlockToken(article.slug, reader_id),
     });
     return;
   }
@@ -274,7 +284,7 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
     }
   }
 
-  if (isMockMode || !BUYER_PRIVATE_KEY) {
+  if (isPaymentMockMode || !BUYER_PRIVATE_KEY) {
     res.json({
       decision: 'paid',
       payment: { tx: '0xmock-tip', amount_atomic, settled_at: new Date().toISOString() },
@@ -323,61 +333,29 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Withdraw endpoint — Circle SDK burn intent (HMAC-protected)
-app.post('/agent/withdraw', hmacAuth, async (req: Request, res: Response) => {
-  const { creator_id, amount_atomic, destination_chain, destination_address } = req.body as {
-    creator_id?: string;
-    amount_atomic?: string;
-    destination_chain?: string;
-    destination_address?: string;
+// Gateway-mint endpoint — called by Vercel /api/withdraw/submit after UCW BurnIntent signing.
+// Uses buyer EOA to submit attestation to GatewayMinter contract (HMAC-protected).
+app.post('/agent/gateway-mint', hmacAuth, async (req: Request, res: Response) => {
+  const { attestation, attestationSig } = req.body as {
+    attestation?: string;
+    attestationSig?: string;
   };
 
-  if (!creator_id || !amount_atomic || !destination_chain || !destination_address) {
-    res.status(400).json({ error: 'creator_id, amount_atomic, destination_chain, destination_address required' });
+  if (!attestation || !attestationSig) {
+    res.status(400).json({ error: 'attestation and attestationSig required' });
     return;
   }
 
-  // Look up creator Circle wallet
-  const { data: creator } = await db
-    .from('creators')
-    .select('circle_wallet_id, eoa_address')
-    .eq('id', creator_id)
-    .single();
-
-  if (!creator?.circle_wallet_id) {
-    res.status(400).json({ error: 'creator has no circle_wallet_id' });
+  if (isPaymentMockMode || !BUYER_PRIVATE_KEY) {
+    res.json({ txHash: '0x' + 'ab'.repeat(32) });
     return;
   }
-
-  // Record withdrawal attempt (submitted → confirmed/failed)
-  const { data: withdrawal } = await db
-    .from('withdrawals')
-    .insert({
-      creator_id,
-      amount_atomic: parseInt(amount_atomic),
-      destination_chain,
-      destination_address,
-      status: 'submitted',
-    })
-    .select('id')
-    .single();
 
   try {
-    const txHash = await executeWithdraw({
-      walletId: creator.circle_wallet_id as string,
-      walletAddress: creator.eoa_address as string,
-      destinationAddress: destination_address,
-      destinationChain: destination_chain,
-      amountAtomic: BigInt(amount_atomic),
-    });
-
-    await db.from('withdrawals').update({ status: 'confirmed', tx_hash: txHash })
-      .eq('id', withdrawal?.id);
-
-    res.json({ status: 'confirmed', withdrawal_id: withdrawal?.id ?? null, tx_hash: txHash });
+    const txHash = await executeGatewayMint(attestation, attestationSig);
+    res.json({ txHash });
   } catch (err) {
-    await db.from('withdrawals').update({ status: 'failed' }).eq('id', withdrawal?.id);
-    res.status(502).json({ decision: 'error', error: String(err) });
+    res.status(502).json({ error: String(err) });
   }
 });
 
@@ -424,7 +402,8 @@ assertStartup()
 
     const server = app.listen(PORT, () => {
       console.log(`[cresc-agents] listening on :${PORT}`);
-      console.log(`[cresc-agents] mock mode: ${isMockMode}`);
+      console.log(`[cresc-agents] Groq mock mode: ${isGroqMockMode}`);
+      console.log(`[cresc-agents] payment mock mode: ${isPaymentMockMode}`);
     });
 
     // Graceful shutdown: stop new requests, drain in-flight payments, then exit
