@@ -204,6 +204,10 @@ async function repriceArticle(
   target = Math.min(Math.max(target, PRICE_MIN_ATOMIC), effectiveMaxAtomic);
   const newPrice = target;
 
+  console.log(
+    `[pricing] ${article.slug}: judged move_pct=${movePct.toFixed(2)} reason="${llmReason}" (demand=${demand.toFixed(3)}) prev=${prev} target=${newPrice}`
+  );
+
   if (newPrice === prev) return; // no change
 
   let tuneTx: string | null = null;
