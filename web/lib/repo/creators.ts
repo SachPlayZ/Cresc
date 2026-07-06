@@ -33,9 +33,19 @@ export async function getCreator(db: SupabaseClient, id: string): Promise<Creato
   return data ?? null;
 }
 
-export async function getCreatorByWallet(db: SupabaseClient, walletAddress: string): Promise<Creator | null> {
-  const { data, error } = await db.from('creators').select('*').eq('wallet_address', walletAddress).single();
-  if (error && error.code !== 'PGRST116') throw error;
+export type PublicCreator = Pick<Creator, 'id' | 'display_name' | 'eoa_address' | 'circle_wallet_id'>;
+
+// Login lookup: given a Circle wallet address (already proven to belong to the
+// caller via listUserWallets(userToken)), find the creator it's bound to.
+// Narrow column selection — never return secrets (ghost_webhook_secret, ghost_key_enc)
+// through this path. Case-insensitive since viem/Circle return checksummed addresses.
+export async function getCreatorByEoaAddress(db: SupabaseClient, address: string): Promise<PublicCreator | null> {
+  const { data, error } = await db
+    .from('creators')
+    .select('id, display_name, eoa_address, circle_wallet_id')
+    .ilike('eoa_address', address)
+    .maybeSingle();
+  if (error) throw error;
   return data ?? null;
 }
 

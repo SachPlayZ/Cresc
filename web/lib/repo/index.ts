@@ -4,6 +4,7 @@ export type {
   Article, Reader, Telemetry, PaymentEvent, PriceHistory, Withdrawal,
   Creator,
 } from './types';
+export type { PublicCreator } from './creators';
 
 // New architecture repos
 export {
@@ -14,4 +15,4 @@ export {
 export { getReader, ensureReader, recordReaderSpend } from './readers';
 
 // Creator (used by ghost connect/sync and dashboard)
-export { getCreator, getCreatorByWallet, createCreator, updateGhostConnection } from './creators';
+export { getCreator, getCreatorByEoaAddress, createCreator, updateGhostConnection } from './creators';

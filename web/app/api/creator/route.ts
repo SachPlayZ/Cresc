@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "../../../lib/db";
-import { createCreator, getCreatorByWallet } from "../../../lib/repo/index";
-import { generateOnboardingToken } from "../../../lib/auth/creator";
+import { createCreator } from "../../../lib/repo/index";
+import {
+  generateOnboardingToken,
+  generateSessionToken,
+  SESSION_COOKIE_NAME,
+  SESSION_TTL_SECONDS,
+} from "../../../lib/auth/creator";
 
 // POST /api/creator — always creates a fresh creator row.
 // Wallet provisioning happens separately via /api/ucw/* (user-controlled wallet flow);
@@ -19,27 +24,23 @@ export async function POST(req: NextRequest) {
     }
 
     const db = createServerClient();
+    const trimmedWallet = wallet_address?.trim().toLowerCase();
     const creator = await createCreator(db, {
       display_name: display_name.trim(),
-      wallet_address: (wallet_address ?? '').trim().toLowerCase(),
+      wallet_address: trimmedWallet ? trimmedWallet : null,
     });
 
-    return NextResponse.json({ creator, onboarding_token: generateOnboardingToken(creator.id) });
+    const res = NextResponse.json({ creator, onboarding_token: generateOnboardingToken(creator.id) });
+    res.cookies.set(SESSION_COOKIE_NAME, generateSessionToken(creator.id), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_TTL_SECONDS,
+    });
+    return res;
   } catch (err) {
+    console.error("[POST /api/creator] failed:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
-}
-
-// GET /api/creator?wallet=<address> — look up creator by wallet
-export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) return NextResponse.json({ error: "wallet param required" }, { status: 400 });
-  try {
-    const db = createServerClient();
-    const creator = await getCreatorByWallet(db, wallet.toLowerCase());
-    if (!creator) return NextResponse.json({ creator: null });
-    return NextResponse.json({ creator });
-  } catch {
-    return NextResponse.json({ creator: null });
   }
 }

@@ -22,6 +22,16 @@ type ConnectResult = {
   snippetHtml: string;
 };
 
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export default function GhostOnboardPage() {
   const sdkRef = useRef<W3SSdk | null>(null);
   const [cookies, setCookie] = useCookies([
@@ -48,6 +58,18 @@ export default function GhostOnboardPage() {
   const userToken = cookies.circle_user_token as string | undefined;
   const encKey = cookies.circle_enc_key as string | undefined;
 
+  // Resume mid-flow after the Google OAuth redirect wipes React state (full page nav).
+  // creatorId in localStorage means step 1 already completed on a prior visit.
+  useEffect(() => {
+    if (step !== 1) return;
+    const savedCreatorId = localStorage.getItem("cresc_creator_id");
+    if (!savedCreatorId) return;
+    setCreatorId(savedCreatorId);
+    setOnboardingToken(localStorage.getItem("cresc_onboarding_token"));
+    setStep(2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Init W3S SDK on step 2
   useEffect(() => {
     if (step !== 2) return;
@@ -59,7 +81,7 @@ export default function GhostOnboardPage() {
 
         const onLoginComplete = (err: unknown, res: unknown) => {
           if (cancelled) return;
-          if (err) { setError("Google login failed: " + String(err)); return; }
+          if (err) { setError("Google login failed: " + describeError(err)); return; }
           const { userToken: ut, encryptionKey: ek } = res as { userToken: string; encryptionKey: string };
           setCookie('circle_user_token', ut, { path: '/' });
           setCookie('circle_enc_key', ek, { path: '/' });
@@ -72,7 +94,7 @@ export default function GhostOnboardPage() {
             loginConfigs: {
               deviceToken: deviceToken ?? '',
               deviceEncryptionKey: deviceEncKey ?? '',
-              google: { clientId: GOOGLE_CLIENT_ID, redirectUri: window.location.origin },
+              google: { clientId: GOOGLE_CLIENT_ID, redirectUri: `${window.location.origin}/ghost-onboard`, selectAccountPrompt: true },
             },
           },
           onLoginComplete
@@ -112,7 +134,7 @@ export default function GhostOnboardPage() {
       // Re-init SDK with new device token
       const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
       const onLoginComplete = (err: unknown, res2: unknown) => {
-        if (err) { setError("Google login failed: " + String(err)); return; }
+        if (err) { setError("Google login failed: " + describeError(err)); return; }
         const { userToken: ut, encryptionKey: ek } = res2 as { userToken: string; encryptionKey: string };
         setCookie('circle_user_token', ut, { path: '/' });
         setCookie('circle_enc_key', ek, { path: '/' });
@@ -124,7 +146,7 @@ export default function GhostOnboardPage() {
           loginConfigs: {
             deviceToken: data.deviceToken!,
             deviceEncryptionKey: data.deviceEncryptionKey!,
-            google: { clientId: GOOGLE_CLIENT_ID, redirectUri: window.location.origin },
+            google: { clientId: GOOGLE_CLIENT_ID, redirectUri: `${window.location.origin}/ghost-onboard`, selectAccountPrompt: true },
           },
         },
         onLoginComplete
@@ -142,7 +164,7 @@ export default function GhostOnboardPage() {
       loginConfigs: {
         deviceToken: deviceToken ?? '',
         deviceEncryptionKey: deviceEncKey ?? '',
-        google: { clientId: GOOGLE_CLIENT_ID, redirectUri: window.location.origin },
+        google: { clientId: GOOGLE_CLIENT_ID, redirectUri: `${window.location.origin}/ghost-onboard`, selectAccountPrompt: true },
       },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,14 +209,22 @@ export default function GhostOnboardPage() {
     } catch (e) { setError(String(e)); }
   }
 
-  async function fetchWalletAddress() {
+  async function fetchWalletAddress(attempt = 0) {
     if (!userToken || !creatorId) return;
     try {
       const url = `/api/ucw/wallet?userToken=${encodeURIComponent(userToken)}&creator_id=${encodeURIComponent(creatorId)}` +
         (onboardingToken ? `&onboarding_token=${encodeURIComponent(onboardingToken)}` : '');
       const res = await fetch(url);
       const data = await res.json() as { address?: string; error?: string };
-      if (!res.ok || data.error) { setError(data.error ?? 'Wallet fetch failed'); setWalletStep('challenge'); return; }
+      if (!res.ok || data.error) {
+        // Circle's backend can take a moment to index a just-approved wallet-creation
+        // challenge — retry a few times before surfacing an error.
+        if (res.status === 404 && attempt < 5) {
+          await new Promise((r) => setTimeout(r, 1500));
+          return fetchWalletAddress(attempt + 1);
+        }
+        setError(data.error ?? 'Wallet fetch failed'); setWalletStep('challenge'); return;
+      }
       setWalletAddress(data.address!);
       localStorage.setItem("cresc_ucw_wallet", data.address!);
       setWalletStep('done');
@@ -258,6 +288,12 @@ export default function GhostOnboardPage() {
             ✓ Connected — {result.syncedCount} post{result.syncedCount !== 1 ? "s" : ""} synced and priced
             {result.errors.length > 0 && ` (${result.errors.length} error${result.errors.length !== 1 ? "s" : ""})`}
           </div>
+          {result.errors.length > 0 && (
+            <div className="font-mono text-xs px-4 py-3 rounded-xl mb-8 whitespace-pre-wrap break-all"
+              style={{ background: "rgba(239,68,68,0.08)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.2)" }}>
+              {result.errors.join("\n")}
+            </div>
+          )}
           <h1 className="font-heading font-bold text-3xl mb-2" style={{ letterSpacing: "-0.03em" }}>
             Two steps left in Ghost Admin
           </h1>

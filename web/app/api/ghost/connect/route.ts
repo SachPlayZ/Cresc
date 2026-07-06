@@ -104,7 +104,8 @@ export async function POST(req: NextRequest) {
         }
         syncedCount++;
       } catch (err) {
-        errors.push(`${post.slug}: ${err instanceof Error ? err.message : String(err)}`);
+        const cause = err instanceof Error && err.cause ? ` (${String(err.cause)})` : '';
+        errors.push(`${post.slug}: ${(err instanceof Error ? err.message : String(err))}${cause}`);
       }
     }
   } catch (err) {

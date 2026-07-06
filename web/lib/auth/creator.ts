@@ -20,6 +20,34 @@ export function verifyOnboardingToken(creatorId: string, token: string | undefin
   return tokenBuf.length === expectedBuf.length && crypto.timingSafeEqual(tokenBuf, expectedBuf);
 }
 
+// Signed session cookie proving "the bearer is creator X" — same HMAC primitive
+// as the onboarding token above, but long-lived and expiry-bearing so it can back
+// a real login/logout cycle instead of just the one-time onboarding window.
+export const SESSION_COOKIE_NAME = 'cresc_session';
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+export function generateSessionToken(creatorId: string): string {
+  const expiry = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
+  const sig = crypto.createHmac('sha256', HMAC_SECRET).update(`${expiry}:${creatorId}`).digest('hex');
+  return `${expiry}:${creatorId}:${sig}`;
+}
+
+export function verifySessionToken(token: string | undefined | null): string | null {
+  if (!token) return null;
+  const parts = token.split(':');
+  if (parts.length !== 3) return null;
+  const [expiryStr, creatorId, sig] = parts;
+  const expiry = Number(expiryStr);
+  if (!Number.isFinite(expiry) || expiry < Math.floor(Date.now() / 1000)) return null;
+
+  const expected = crypto.createHmac('sha256', HMAC_SECRET).update(`${expiryStr}:${creatorId}`).digest('hex');
+  const sigBuf = Buffer.from(sig, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+
+  return creatorId;
+}
+
 type CreatorWalletRow = {
   id: string;
   circle_wallet_id: string | null;

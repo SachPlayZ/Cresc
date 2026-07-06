@@ -5,15 +5,29 @@ import { useCookies } from "react-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
-import type { Creator } from "../lib/repo/types";
 import { fromDisplay } from "../lib/money";
+
+// Deliberately narrow — never accept the full Creator row here. This is a client
+// component, so any prop passed to it gets serialized into the page payload sent to
+// the browser; the full row carries ghost_webhook_secret / ghost_key_enc.
+type WithdrawCreator = { id: string; eoa_address: string | null };
 
 const CIRCLE_APP_ID = process.env.NEXT_PUBLIC_CIRCLE_APP_ID ?? "";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID ?? "";
 
 type Status = 'idle' | 'auth' | 'signing' | 'submitting' | 'done' | 'error';
 
-export function WithdrawSection({ creator }: { creator: Creator }) {
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
   const sdkRef = useRef<W3SSdk | null>(null);
   const [cookies, setCookie] = useCookies([
     'circle_device_token', 'circle_device_enc_key',
@@ -37,7 +51,7 @@ export function WithdrawSection({ creator }: { creator: Creator }) {
   useEffect(() => {
     if (!CIRCLE_APP_ID) return;
     const onLoginComplete = (err: unknown, res: unknown) => {
-      if (err) { setErrorMsg("Re-auth failed: " + String(err)); setStatus('error'); return; }
+      if (err) { setErrorMsg("Re-auth failed: " + describeError(err)); setStatus('error'); return; }
       const { userToken: ut, encryptionKey: ek } = res as { userToken: string; encryptionKey: string };
       setCookie('circle_user_token', ut, { path: '/' });
       setCookie('circle_enc_key', ek, { path: '/' });
@@ -51,7 +65,7 @@ export function WithdrawSection({ creator }: { creator: Creator }) {
           loginConfigs: {
             deviceToken: deviceToken ?? '',
             deviceEncryptionKey: deviceEncKey ?? '',
-            google: { clientId: GOOGLE_CLIENT_ID, redirectUri: window.location.origin },
+            google: { clientId: GOOGLE_CLIENT_ID, redirectUri: `${window.location.origin}/dashboard`, selectAccountPrompt: true },
           },
         },
         onLoginComplete

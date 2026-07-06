@@ -932,32 +932,28 @@ function StatsSection() {
 }
 
 export default function Home() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "dark";
+  const [theme, setTheme] = useState<Theme>("dark");
+
+  useEffect(() => {
     try {
       const saved = localStorage.getItem("cresc-theme");
-      return saved === "dark" || saved === "light" ? saved : "dark";
+      if (saved === "dark" || saved === "light") setTheme(saved);
     } catch {
-      return "dark";
+      // localStorage unavailable — stay on default theme
     }
-  });
+  }, []);
   const [loaded, setLoaded] = useState(false);
-  const [creatorId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
+  const [creatorId, setCreatorId] = useState<string | null>(null);
+  const [ucwWallet, setUcwWallet] = useState<string | null>(null);
+
+  useEffect(() => {
     try {
-      return localStorage.getItem("cresc_creator_id");
+      setCreatorId(localStorage.getItem("cresc_creator_id"));
+      setUcwWallet(localStorage.getItem("cresc_ucw_wallet"));
     } catch {
-      return null;
+      // localStorage unavailable (private mode, etc) — stay signed out
     }
-  });
-  const [ucwWallet] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      return localStorage.getItem("cresc_ucw_wallet");
-    } catch {
-      return null;
-    }
-  });
+  }, []);
 
   const [price, setPrice] = useState(0.014);
   const [displayed, setDisplayed] = useState(0.014);
@@ -1308,7 +1304,7 @@ export default function Home() {
           {creatorId ? (
             <>
               <Link
-                href={`/dashboard?creator=${creatorId}`}
+                href="/dashboard"
                 style={{ textDecoration: "none", display: "inline-flex" }}
               >
                 <Button
@@ -1342,6 +1338,22 @@ export default function Home() {
             </>
           ) : (
             <>
+              <Link
+                href="/login"
+                style={{ textDecoration: "none", display: "inline-flex" }}
+              >
+                <Button
+                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
+                  style={{
+                    height: 38,
+                    color: "var(--c-text)",
+                    border: "1px solid var(--c-border)",
+                    background: "transparent",
+                  }}
+                >
+                  Log in
+                </Button>
+              </Link>
               <Link
                 href="/ghost-onboard"
                 style={{ textDecoration: "none", display: "inline-flex" }}

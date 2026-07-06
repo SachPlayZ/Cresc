@@ -3,24 +3,26 @@
 
 import { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { createServerClient } from "../../lib/db";
 import { listArticlesByCreator, getCreator } from "../../lib/repo/index";
 import type { Article, Creator } from "../../lib/repo/types";
 import { fromBaseUnits, toDisplay } from "../../lib/money";
 import { USDC_ERC20_DECIMALS } from "../../lib/config";
 import { WithdrawSection } from "../../components/WithdrawSection";
+import { LogoutButton } from "../../components/LogoutButton";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "../../lib/auth/creator";
 
 export const metadata: Metadata = { title: "Dashboard — Cresc" };
 
 const DEV_CREATOR_ID = process.env.DEV_CREATOR_ID ?? "";
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ creator?: string }>;
-}) {
-  const { creator: creatorParam } = await searchParams;
-  const creatorId = creatorParam ?? DEV_CREATOR_ID;
+export default async function DashboardPage() {
+  const cookieStore = await cookies();
+  const sessionCreatorId = verifySessionToken(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const creatorId = sessionCreatorId ?? DEV_CREATOR_ID;
+  if (!creatorId) redirect("/login");
 
   let creator: Creator | null = null;
   let articles: Article[] = [];
@@ -60,11 +62,14 @@ export default async function DashboardPage({
     <main className="min-h-screen bg-background text-foreground">
       <nav className="flex items-center justify-between px-10 py-4.5 border-b" style={{ borderColor: 'var(--c-border-soft)' }}>
         <Link href="/" className="font-heading font-bold text-lg tracking-tight">Cresc</Link>
-        {creator && (
-          <span className="font-sans text-sm text-muted-foreground">
-            {creator.display_name}
-          </span>
-        )}
+        <div className="flex items-center gap-4">
+          {creator && (
+            <span className="font-sans text-sm text-muted-foreground">
+              {creator.display_name}
+            </span>
+          )}
+          <LogoutButton />
+        </div>
       </nav>
 
       <div className="max-w-4xl mx-auto px-6 py-12 space-y-10">
@@ -89,7 +94,7 @@ export default async function DashboardPage({
               <div className="text-xs text-muted-foreground mt-0.5">Sync articles and enable the paywall snippet</div>
             </div>
             <Link
-              href={`/ghost-connect${creatorId ? `?creator=${creatorId}` : ''}`}
+              href={`/ghost-connect?creator=${creatorId}`}
               className="text-sm font-semibold px-4 py-2 rounded-lg"
               style={{ background: '#0f172a', color: '#fff' }}
             >
@@ -143,7 +148,7 @@ export default async function DashboardPage({
           </div>
         )}
 
-        {creator && <WithdrawSection creator={creator} />}
+        {creator && <WithdrawSection creator={{ id: creator.id, eoa_address: creator.eoa_address ?? null }} />}
 
       </div>
     </main>
