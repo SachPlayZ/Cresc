@@ -358,8 +358,13 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
     const current = post?.current as Record<string, unknown> | undefined;
     const previous = post?.previous as Record<string, unknown> | undefined;
     const ghostPostId = (current?.id ?? previous?.id) as string | undefined;
-    console.log(`[ghost-webhook] site=${siteParam} ghostPostId=${ghostPostId} status=${current?.status}`);
+    const slugForLog = (current?.slug ?? previous?.slug) as string | undefined;
+    console.log(
+      `[ghost-webhook] site=${siteParam} ghostPostId=${ghostPostId} slug=${slugForLog} ` +
+      `status: ${previous?.status ?? '(none)'} -> ${current?.status ?? '(none)'}`
+    );
     if (!ghostPostId) {
+      console.log(`[ghost-webhook] site=${siteParam} SKIPPED — no post id in payload (not a post.* event?)`);
       res.json({ ok: true });
       return;
     }
@@ -367,6 +372,14 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
     const status = current?.status as string | undefined;
     const isDeleted = !current || Object.keys(current).length === 0;
     if (isDeleted || status === 'deleted' || (status && status !== 'published')) {
+      console.log(
+        `[ghost-webhook] site=${siteParam} slug=${slugForLog} SKIPPED — status is ` +
+        `"${status ?? (isDeleted ? 'deleted' : 'unknown')}", not "published". ` +
+        `Marking articles row inactive (no-op if it doesn't exist yet). If you just hit ` +
+        `Publish on a draft and expected this to sync, check that a webhook is registered ` +
+        `for the "Post published" event specifically — "Post created"/"Post updated" do not ` +
+        `reliably fire on a draft-to-published transition.`
+      );
       await db.from('articles').update({ active: false, updated_at: new Date().toISOString() })
         .eq('creator_id', siteParam)
         .eq('ghost_post_id', ghostPostId);
