@@ -69,6 +69,7 @@ export const PRICE_MAX_ATOMIC: number = parseNumber('PRICE_MAX_ATOMIC', 1_000_00
 export const W_VIEWS: number = parseNumber('W_VIEWS', 0.4);
 export const W_DWELL: number = parseNumber('W_DWELL', 0.4);
 export const W_TIPS: number  = parseNumber('W_TIPS',  0.2);
+export const PRICE_MAX_HOURLY_MOVE_PCT: number = parseNumber('PRICE_MAX_HOURLY_MOVE_PCT', 0.05);
 
 export const WATCHER_INTERVAL_MS: number = parseNumber('WATCHER_INTERVAL_MINUTES', 60) * 60 * 1000;
 export const AUDIT_INTERVAL_MS: number   = parseNumber('AUDIT_INTERVAL_MINUTES', 55) * 60 * 1000;

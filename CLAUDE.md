@@ -116,11 +116,18 @@ HTTP, not a queue. Reader Agent runs Express; Vercel calls synchronously. No pub
 **Watcher — hourly per active article, on AUDITED counts only:**
 ```
 demand = W_VIEWS*norm(views_24h) + W_DWELL*norm(avg_dwell_24h) + W_TIPS*norm(tips_24h)
-target = round(base_price_atomic * (0.5 + demand))
-new_price = clamp(target, PRICE_MIN_ATOMIC, PRICE_MAX_ATOMIC)
-new_price = clamp(new_price, prev*0.8, prev*1.2)   # ±20%/hr volatility damp
 ```
-Normalization uses 7-day rolling medians across all articles. Write `articles.current_price_atomic`; append `price_history` with the three normalized inputs as `reason`. `current_price` is what the seller route reads for `PAYMENT-REQUIRED`.
+The demand signals above are context, not a hard target. One Groq call judges the actual
+hourly move: strict-JSON `{ move_pct: -5..5, reason }`, given the signals plus what a naive
+demand-only formula would have implied (a reference point, not a target). The returned
+`move_pct` is hard-clamped to `±PRICE_MAX_HOURLY_MOVE_PCT` (default 0.05, i.e. ±5%/hr)
+regardless of what the model says — never trust LLM output unbounded.
+```
+new_price = clamp(round(prev * (1 + move_pct/100)), PRICE_MIN_ATOMIC, PRICE_MAX_ATOMIC)
+```
+**Mock mode:** if `GROQ_API_KEY` unset, `move_pct` is derived from the naive formula above,
+clamped to ±5% — same fallback pattern as the Reader Agent gates.
+Normalization uses 7-day rolling medians across all articles. Write `articles.current_price_atomic`; append `price_history` with the normalized inputs plus `llm_move_pct`/`llm_reason` as `reason`. `current_price` is what the seller route reads for `PAYMENT-REQUIRED`.
 
 **Creator Audit Agent — runs before Watcher consumes telemetry:**
 1. Deterministic pre-filter: drop view if `dwell_ms < 1500`; same `reader_id` on same `article_id` > N/hr (default 3); self-tip from creator wallet; flag per-IP/reader z-score spikes.

@@ -1,18 +1,26 @@
 // src/workers/watcher.ts — Pricing Agent: reads audited telemetry, tunes content-contract prices.
-// Deterministic formula (CLAUDE.md §Agent decision logic / Watcher):
-//   demand = W_VIEWS*norm(views_24h) + W_DWELL*norm(avg_dwell_24h) + W_TIPS*norm(tips_24h)
-//   target = round(base_price_atomic * (0.5 + demand))
-//   new_price = clamp(target, PRICE_MIN, PRICE_MAX)
-//   new_price = clamp(new_price, prev*0.8, prev*1.2)  -- ±20%/hr volatility damp
+// Two-stage design (CLAUDE.md §Agent decision logic / Watcher):
+//   1. demand = W_VIEWS*norm(views_24h) + W_DWELL*norm(avg_dwell_24h) + W_TIPS*norm(tips_24h)
+//      (same normalized signals as before — fed to the agent as context, not a hard target)
+//   2. Groq call judges the actual move: { move_pct: -5..5, reason }, mirroring the Reader
+//      Agent's quality/interest/confidence gate call (reader-agent.ts). The returned move_pct
+//      is hard-clamped to ±PRICE_MAX_HOURLY_MOVE_PCT regardless of what the model says —
+//      never trust LLM output unbounded.
+//   new_price = clamp(round(prev * (1 + move_pct/100)), PRICE_MIN, PRICE_MAX)
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { keccak256, toHex } from 'viem';
 import {
   PRICE_MIN_ATOMIC,
   PRICE_MAX_ATOMIC,
+  PRICE_MAX_HOURLY_MOVE_PCT,
   W_VIEWS,
   W_DWELL,
   W_TIPS,
+  GROQ_API_KEY,
+  GROQ_BASE_URL,
+  GROQ_MODEL,
+  isGroqMockMode,
 } from '../config.js';
 import { tuneContentPrice } from './content-contracts.js';
 
@@ -31,10 +39,94 @@ type AuditedRow = {
 
 type ArticleRow = {
   slug: string;
+  title: string | null;
   content_contract: string | null;
   base_price_atomic: string | number;
   current_price_atomic: string | number;
 };
+
+type PriceMove = { move_pct: number; reason: string };
+
+function clampMovePct(pct: number): number {
+  const bound = PRICE_MAX_HOURLY_MOVE_PCT * 100;
+  if (!Number.isFinite(pct)) return 0;
+  return Math.min(Math.max(pct, -bound), bound);
+}
+
+/**
+ * Groq judges the hourly price move for one article, given the normalized demand
+ * signals as context (not a hard target). Mirrors reader-agent.ts's callGroq shape
+ * (strict JSON, mock-mode stub when GROQ_API_KEY is unset).
+ */
+async function judgePriceMove(
+  article: ArticleRow,
+  signals: { viewsNorm: number; dwellNorm: number; tipsNorm: number; demand: number },
+  prev: number,
+  basePriceAtomic: number
+): Promise<PriceMove> {
+  // Deterministic reference: what the old formula would have implied, as a prior for
+  // the model (and the mock-mode fallback below) — never used as the final value directly.
+  const formulaTarget = basePriceAtomic * (0.5 + signals.demand);
+  const formulaPct = prev > 0 ? ((formulaTarget - prev) / prev) * 100 : 0;
+
+  if (isGroqMockMode || !GROQ_API_KEY) {
+    return { move_pct: clampMovePct(formulaPct), reason: 'mock mode stub' };
+  }
+
+  const prompt = `You are the Pricing Agent for a pay-per-article content platform. Decide how much \
+to move this article's price for the next hour.
+
+Article: "${article.title ?? article.slug}"
+Current price: $${(prev / 1_000_000).toFixed(4)} USDC
+Base price: $${(basePriceAtomic / 1_000_000).toFixed(4)} USDC
+
+Demand signals (normalized against 7-day rolling medians across all articles):
+- views (24h), normalized: ${signals.viewsNorm.toFixed(3)}
+- avg dwell time (24h), normalized: ${signals.dwellNorm.toFixed(3)}
+- tips (24h), normalized: ${signals.tipsNorm.toFixed(3)}
+- combined demand score: ${signals.demand.toFixed(3)}
+- reference: a naive demand-only formula implies a ${formulaPct.toFixed(2)}% change this hour
+
+You MUST return a move strictly between -5 and 5 (percent). Use your judgement — the naive
+formula above is a reference point, not a target; you may move less, more (within the band),
+or the opposite direction if the signals don't support the naive read.
+
+Respond strictly as JSON with no prose:
+{
+  "move_pct": <number between -5 and 5>,
+  "reason": "<one short clause>"
+}`;
+
+  const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      max_tokens: 128,
+      temperature: 0.2,
+    }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`[pricing] Groq call failed: ${res.status} ${txt.slice(0, 200)}`);
+  }
+
+  const json = await res.json() as { choices: { message: { content: string } }[] };
+  const content = json.choices?.[0]?.message?.content ?? '{}';
+  const parsed = JSON.parse(content) as { move_pct?: unknown; reason?: unknown };
+  const movePct = typeof parsed.move_pct === 'number' ? parsed.move_pct : parseFloat(String(parsed.move_pct));
+  if (isNaN(movePct)) {
+    throw new Error(`[pricing] Groq response missing numeric move_pct: ${content}`);
+  }
+  const reason = typeof parsed.reason === 'string' ? parsed.reason : '';
+  return { move_pct: clampMovePct(movePct), reason };
+}
 
 /** Compute rolling medians for normalization from recent audited windows. */
 async function computeMedians(
@@ -100,15 +192,29 @@ async function repriceArticle(
   const prev = Number(BigInt(String(article.current_price_atomic)));
 
   const effectiveMaxAtomic = Math.min(PRICE_MAX_ATOMIC, CONTRACT_PRICE_MAX_ATOMIC);
-  let target = Math.round(basePriceAtomic * (0.5 + demand));
-  target = Math.min(Math.max(target, PRICE_MIN_ATOMIC), effectiveMaxAtomic);
 
-  const newPrice = Math.min(Math.max(target, Math.round(prev * 0.8)), Math.round(prev * 1.2));
+  const { move_pct: movePct, reason: llmReason } = await judgePriceMove(
+    article,
+    { viewsNorm, dwellNorm, tipsNorm, demand },
+    prev,
+    basePriceAtomic
+  );
+
+  let target = Math.round(prev * (1 + movePct / 100));
+  target = Math.min(Math.max(target, PRICE_MIN_ATOMIC), effectiveMaxAtomic);
+  const newPrice = target;
 
   if (newPrice === prev) return; // no change
 
   let tuneTx: string | null = null;
-  const reason = { views_norm: viewsNorm, dwell_norm: dwellNorm, tips_norm: tipsNorm, demand };
+  const reason = {
+    views_norm: viewsNorm,
+    dwell_norm: dwellNorm,
+    tips_norm: tipsNorm,
+    demand,
+    llm_move_pct: movePct,
+    llm_reason: llmReason,
+  };
   const reasonHash = keccak256(toHex(JSON.stringify(reason)));
   if (article.content_contract) {
     try {
@@ -138,7 +244,7 @@ async function repriceArticle(
   });
 
   console.log(
-	    `[pricing] ${article.slug}: ${prev} → ${newPrice} tx=${tuneTx ?? 'mock/cache'} (demand=${demand.toFixed(3)})`
+	    `[pricing] ${article.slug}: ${prev} → ${newPrice} tx=${tuneTx ?? 'mock/cache'} (demand=${demand.toFixed(3)}, move_pct=${movePct.toFixed(2)}, reason="${llmReason}")`
   );
 }
 
@@ -147,7 +253,7 @@ export async function runWatcher(db: SupabaseClient): Promise<void> {
 
   const { data: articles, error } = await db
     .from('articles')
-    .select('slug, content_contract, base_price_atomic, current_price_atomic')
+    .select('slug, title, content_contract, base_price_atomic, current_price_atomic')
     .eq('active', true);
 
   if (error || !articles || articles.length === 0) {
