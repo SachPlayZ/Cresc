@@ -231,7 +231,7 @@ export default function GhostDocsClient() {
             <span className="text-foreground font-semibold">Code Injection</span>
           </div>
           <p className="text-muted-foreground text-base leading-relaxed">
-            Keep this tab open. Later in this guide, you will paste the Cresc snippet into the <strong className="text-foreground">Site Footer</strong> editor box.
+            Keep this tab open. Later in this guide, you will paste the Cresc snippet into the <strong className="text-foreground">Site Header</strong> editor box.
           </p>
         </div>
       )
@@ -241,16 +241,16 @@ export default function GhostDocsClient() {
       title: "Paste the Cresc Script",
       shortTitle: "Inject Script",
       image: "/step7.png",
-      imageAlt: "Code Injection Footer snippet settings screenshot",
+      imageAlt: "Code Injection Header snippet settings screenshot",
       content: (
         <div className="space-y-4">
           <p className="text-muted-foreground text-base leading-relaxed">
             Navigate back to <strong className="text-foreground">Settings → Advanced → Code Injection</strong>.
           </p>
           <p className="text-muted-foreground text-base leading-relaxed">
-            Scroll down to the <strong className="text-foreground">Site Footer</strong> field and paste the custom script tag generated during onboarding:
+            Find the <strong className="text-foreground">Site Header</strong> field and paste the custom script tag generated during onboarding:
           </p>
-          
+
           <div className="my-3 space-y-1">
             <CodeBlock value={`<script
   src="${appUrl}/cresc-ghost.js"
@@ -263,7 +263,7 @@ export default function GhostDocsClient() {
           </p>
 
           <Callout type="warning">
-            Paste the script into <strong>Site Footer</strong>. Do not paste it into the Site Header, as it needs to run after the page elements have loaded.
+            Paste the script into <strong>Site Header</strong>, not Site Footer. A footer script only starts running after the browser has already rendered the full article, so paid content would flash fully visible before it gets clipped. Header injection runs before first paint, so the clip applies immediately.
           </Callout>
         </div>
       )

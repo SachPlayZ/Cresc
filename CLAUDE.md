@@ -199,10 +199,11 @@ Assertions 1–2 are skipped in mock mode (when `GROQ_API_KEY` is unset) but sho
 
 ## Ghost integration
 
-`web/public/cresc-ghost.js` is a self-contained ~2KB snippet injected into Ghost sites via Code Injection → Site Footer. It:
-1. Checks `GET /api/ghost/post-status?site=<creatorId>&slug=<slug>` on every Ghost page load.
-2. Clips post content to 300px + gradient overlay if paywalled.
-3. Shows an "Unlock for $X →" button linking to `/read?slug=<slug>`.
+`web/public/cresc-ghost.js` is a self-contained ~2KB snippet injected into Ghost sites via Code Injection → **Site Header** (not Footer — a footer script only runs after the browser has already painted the full article, causing a flash of unpaywalled content). It:
+1. Synchronously injects a `<style>` cloak (`max-height:300px;overflow:hidden`) on the content selectors before first paint, so paid content is never visible even momentarily.
+2. Checks `GET /api/ghost/post-status?site=<creatorId>&slug=<slug>` on every Ghost page load.
+3. If not paywalled, removes the cloak. If paywalled, replaces it with a styled clip + gradient overlay once the DOM is ready.
+4. Shows an "Unlock for $X →" button linking to `/read?slug=<slug>`.
 
 Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks directly to EC2's `POST /agent/ghost/webhook?site=<creatorId>` (validated against that creator's own `ghost_webhook_secret` DB column, not a global env var); `web/app/api/ghost/sync/route.ts` is a compat proxy for old webhook URLs only. Upserts into `articles` and, live, deploys/registers the post's `ContentVault`. Creator onboarding happens at `/ghost-onboard`.
 

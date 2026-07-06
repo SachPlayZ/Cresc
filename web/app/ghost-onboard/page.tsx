@@ -319,7 +319,7 @@ export default function GhostOnboardPage() {
               <h3 className="font-heading font-semibold text-sm">Inject paywall snippet</h3>
             </div>
             <p className="font-sans text-xs text-muted-foreground mb-4 ml-7">
-              Ghost Admin → Settings → Code Injection → Site Footer → paste this tag.
+              Ghost Admin → Settings → Code Injection → Site Header → paste this tag.
             </p>
             <div className="flex items-start gap-2 ml-7">
               <code className="font-mono text-xs flex-1 break-all"

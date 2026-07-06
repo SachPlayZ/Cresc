@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
       `   Events: "Post published", "Post updated", "Post deleted"`,
       `   URL: ${webhookUrl}`,
       `   Secret: ${webhookSecret}`,
-      `2. Ghost Admin → Settings → Code Injection → Site Footer`,
+      `2. Ghost Admin → Settings → Code Injection → Site Header`,
       `   Paste: ${snippetHtml}`,
     ],
   });

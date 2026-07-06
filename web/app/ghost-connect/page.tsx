@@ -209,7 +209,7 @@ export default function GhostConnectPage() {
             >
               <h3 className="font-heading font-semibold text-sm mb-3">Step 2 — Inject paywall snippet</h3>
               <p className="font-sans text-xs text-muted-foreground mb-3">
-                Ghost Admin → Settings → Code Injection → Site Footer → paste this tag.
+                Ghost Admin → Settings → Code Injection → Site Header → paste this tag.
               </p>
               <div className="flex items-start gap-2">
                 <code
