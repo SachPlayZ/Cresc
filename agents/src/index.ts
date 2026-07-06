@@ -385,7 +385,7 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
       slug: (current?.slug as string | undefined) ?? ghostPostId,
       ghost_post_id: ghostPostId,
       title: (current?.title as string | undefined) ?? '',
-      excerpt: (current?.custom_excerpt as string | undefined) ?? '',
+      excerpt: (current?.custom_excerpt as string | undefined) ?? (current?.excerpt as string | undefined) ?? '',
       ghost_instance_url: creator.ghost_instance_url as string | null,
       initial_price_atomic: 50000,
     });

@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
           slug: post.slug,
           ghost_post_id: post.id,
           title: post.title,
-          excerpt: post.custom_excerpt ?? '',
+          excerpt: post.custom_excerpt ?? post.excerpt ?? '',
           ghost_instance_url: instanceUrl,
           initial_price_atomic: 50000,
         };

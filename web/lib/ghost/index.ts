@@ -70,6 +70,7 @@ export type GhostPost = {
   title: string;
   html: string;          // full content — fetched at read time only
   custom_excerpt: string | null;
+  excerpt: string | null; // Ghost-computed fallback when custom_excerpt is unset
   published_at: string;
   feature_image: string | null;
   reading_time: number;  // minutes
@@ -91,7 +92,7 @@ function buildJwt(adminKey: string): string {
   return `${header}.${payload}.${sig}`;
 }
 
-const POST_FIELDS = 'id,slug,title,html,custom_excerpt,published_at,feature_image,reading_time';
+const POST_FIELDS = 'id,slug,title,html,custom_excerpt,excerpt,published_at,feature_image,reading_time';
 
 export class GhostAdminClient {
   private instanceUrl: string;
