@@ -111,12 +111,20 @@ function generateUnlockToken(site: string, slug: string, readerId: string): stri
 
 function verifyGhostSignature(rawBody: string, signatureHeader: string, webhookSecret: string): boolean {
   try {
-    const sha256Part = signatureHeader.split(',').find((p) => p.trim().startsWith('sha256='));
-    if (!sha256Part) return false;
-    const receivedHex = sha256Part.trim().replace('sha256=', '');
+    const parts = Object.fromEntries(
+      signatureHeader.split(',').map((p) => {
+        const [k, v] = p.trim().split('=');
+        return [k, v];
+      })
+    );
+    const receivedHex = parts.sha256;
+    const timestamp = parts.t;
+    if (!receivedHex || !timestamp) return false;
+    // Ghost signs body + timestamp concatenated (not body alone) — see
+    // https://docs.ghost.org/webhooks, X-Ghost-Signature: sha256=<hex>, t=<ms epoch>.
     const expected = crypto
       .createHmac('sha256', Buffer.from(webhookSecret))
-      .update(rawBody)
+      .update(`${rawBody}${timestamp}`)
       .digest();
     const received = Buffer.from(receivedHex, 'hex');
     return received.length === expected.length && crypto.timingSafeEqual(received, expected);
