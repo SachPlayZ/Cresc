@@ -41,7 +41,10 @@ const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const app = express();
 
 // Capture raw body while JSON parsing so HMAC verification and req.body both work.
+// limit raised from Express's 100kb default — Ghost post.* webhook payloads carry the
+// full post HTML/lexical body and routinely exceed that for image-heavy or long posts.
 app.use(express.json({
+  limit: '15mb',
   verify: (req, _res, buf) => {
     (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
   },
