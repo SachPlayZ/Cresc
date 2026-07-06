@@ -45,19 +45,11 @@ interface PageProps {
     slug?: string;
     site?: string;
     unlock_token?: string;
-    // Legacy params (pieces-based flow)
-    piece?: string;
-    session?: string;
   }>;
 }
 
 export default async function ReadPage({ searchParams }: PageProps) {
   const params = await searchParams;
-
-  // --- Legacy pieces flow (backward compat) ---
-  if (params.piece && params.session) {
-    return <LegacyPiecesReader pieceId={params.piece} sessionId={params.session} />;
-  }
 
   const slug = params.slug;
   const site = params.site;   // creatorId
@@ -213,64 +205,6 @@ export default async function ReadPage({ searchParams }: PageProps) {
           <Link href="/" className="underline">Learn more</Link>
         </p>
       </div>
-    </main>
-  );
-}
-
-async function LegacyPiecesReader({ pieceId, sessionId }: { pieceId: string; sessionId: string }) {
-  const db = createServerClient();
-
-  const { data: session } = await db
-    .from("sessions")
-    .select("id, piece_id, reader_id, view_price_paid")
-    .eq("id", sessionId)
-    .single();
-
-  if (!session || session.piece_id !== pieceId) redirect(`/piece/${pieceId}`);
-
-  const { data: piece } = await db
-    .from("pieces")
-    .select("id, title, ghost_post_id, ghost_instance_url, creator_id, current_price")
-    .eq("id", pieceId)
-    .single();
-
-  if (!piece || !piece.ghost_post_id) return <div className="p-10">Not found.</div>;
-
-  const { data: creator } = await db
-    .from("creators")
-    .select("display_name, wallet_address, ghost_admin_key")
-    .eq("id", piece.creator_id)
-    .single();
-
-  if (!creator?.ghost_admin_key) return <div className="p-10">Not found.</div>;
-
-  let ghostHtml = "";
-  try {
-    const ghostClient = new GhostAdminClient(
-      piece.ghost_instance_url as string,
-      creator.ghost_admin_key as string
-    );
-    const post = await ghostClient.getPost(piece.ghost_post_id as string);
-    ghostHtml = post.html ?? "";
-  } catch (err) {
-    console.error("[read] legacy Ghost fetch failed:", err);
-    ghostHtml = "<p>Content temporarily unavailable.</p>";
-  }
-
-  const pricePaid = toDisplay(
-    fromBaseUnits(BigInt(session.view_price_paid as string), USDC_ERC20_DECIMALS)
-  );
-
-  return (
-    <main className="min-h-screen bg-background text-foreground pb-24">
-      <nav className="flex items-center justify-between px-10 py-4.5 border-b" style={{ borderColor: "var(--c-border-soft)" }}>
-        <Link href="/" className="font-heading font-bold text-lg">Cresc</Link>
-        <span className="font-mono text-xs px-3 py-1.5 rounded-lg border">{pricePaid} · settled on Arc</span>
-      </nav>
-      <div className="max-w-2xl mx-auto px-6 pt-12">
-        <h1 className="font-heading font-bold text-[38px] leading-tight mb-4">{piece.title as string}</h1>
-      </div>
-      <GhostReader html={ghostHtml} />
     </main>
   );
 }

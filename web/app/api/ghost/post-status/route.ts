@@ -42,24 +42,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Fallback: legacy pieces table
-    const { data: piece } = await db
-      .from('pieces')
-      .select('id, current_price')
-      .eq('creator_id', site)
-      .eq('ghost_slug', slug)
-      .eq('status', 'listed')
-      .single();
-
-    if (!piece) {
-      return NextResponse.json({ paywalled: false }, { headers: CORS });
-    }
-
-    const price = fromBaseUnits(BigInt(piece.current_price as string), USDC_ERC20_DECIMALS);
-    return NextResponse.json(
-      { paywalled: true, pieceId: piece.id, priceDisplay: toDisplay(price) },
-      { headers: CORS }
-    );
+    return NextResponse.json({ paywalled: false }, { headers: CORS });
   } catch {
     return NextResponse.json({ paywalled: false }, { headers: CORS });
   }
