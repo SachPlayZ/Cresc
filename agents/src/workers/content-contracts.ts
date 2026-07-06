@@ -143,11 +143,34 @@ function getTunerAddress(): `0x${string}` | null {
   return CONTENT_TUNER_ADDRESS ? CONTENT_TUNER_ADDRESS as `0x${string}` : null;
 }
 
+// Ghost fires multiple webhook events (e.g. post.published + post.updated) for a single
+// publish action, arriving within milliseconds of each other. Without this lock, two
+// concurrent calls for the same content both see "no contract yet" (DB and on-chain reads
+// race ahead of either transaction confirming) and both submit a createContent tx from the
+// same tuner account, colliding on nonce. Keyed by contentId so unrelated articles still
+// deploy in parallel.
+const _inFlightDeployments = new Map<string, Promise<ContentDeployment>>();
+
 export async function ensureContentContract(
   db: SupabaseClient,
   input: ContentInput
 ): Promise<ContentDeployment> {
   const contentId = buildContentId(input.creator_id, input.ghost_post_id, input.slug);
+  const inFlight = _inFlightDeployments.get(contentId);
+  if (inFlight) return inFlight;
+
+  const promise = ensureContentContractInner(db, input, contentId).finally(() => {
+    _inFlightDeployments.delete(contentId);
+  });
+  _inFlightDeployments.set(contentId, promise);
+  return promise;
+}
+
+async function ensureContentContractInner(
+  db: SupabaseClient,
+  input: ContentInput,
+  contentId: `0x${string}`
+): Promise<ContentDeployment> {
   const initialPrice = BigInt(input.initial_price_atomic ?? 50000);
   const metadata = {
     creator_id: input.creator_id,
