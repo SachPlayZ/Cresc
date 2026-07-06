@@ -320,10 +320,11 @@ app.post('/agent/content/upsert', hmacAuth, async (req: Request, res: Response) 
 });
 
 app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
+  let siteParam = '';
   try {
     const rawBody = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
     const sigHeader = req.headers['x-ghost-signature'] as string | undefined ?? '';
-    const siteParam = typeof req.query.site === 'string' ? req.query.site : '';
+    siteParam = typeof req.query.site === 'string' ? req.query.site : '';
 
     if (!siteParam) {
       res.status(400).json({ error: 'site query param required' });
@@ -336,7 +337,10 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
       .eq('id', siteParam)
       .single();
 
+    console.log(`[ghost-webhook] received site=${siteParam} sig="${sigHeader}" bodyLen=${rawBody.length} hasSecret=${!!creator?.ghost_webhook_secret}`);
+
     if (!creator?.ghost_webhook_secret || !verifyGhostSignature(rawBody, sigHeader, creator.ghost_webhook_secret as string)) {
+      console.log(`[ghost-webhook] signature check FAILED for site=${siteParam}`);
       res.status(401).json({ error: 'unauthorized' });
       return;
     }
@@ -346,6 +350,7 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
     const current = post?.current as Record<string, unknown> | undefined;
     const previous = post?.previous as Record<string, unknown> | undefined;
     const ghostPostId = (current?.id ?? previous?.id) as string | undefined;
+    console.log(`[ghost-webhook] site=${siteParam} ghostPostId=${ghostPostId} status=${current?.status}`);
     if (!ghostPostId) {
       res.json({ ok: true });
       return;
@@ -376,9 +381,11 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
       ghost_instance_url: creator.ghost_instance_url as string | null,
       initial_price_atomic: 50000,
     });
+    console.log(`[ghost-webhook] upsertContent OK site=${siteParam} contract=${deployment.content_contract}`);
 
     res.json({ ok: true, deployment });
   } catch (err) {
+    console.error(`[ghost-webhook] upsertContent FAILED site=${siteParam}:`, err);
     res.status(502).json({ error: String(err) });
   }
 });
