@@ -4,6 +4,7 @@ import { useState } from "react";
 
 interface TipButtonProps {
   creatorId: string;
+  contentContract: string;
   creatorName: string;
   defaultAmountAtomic: string; // suggested tip = 50% of article price
 }
@@ -14,7 +15,7 @@ const PRESET_AMOUNTS = [
   { label: "$0.10", atomic: "100000" },
 ];
 
-export function TipButton({ creatorId, creatorName, defaultAmountAtomic }: TipButtonProps) {
+export function TipButton({ creatorId, contentContract, creatorName, defaultAmountAtomic }: TipButtonProps) {
   const [state, setState] = useState<'idle' | 'paying' | 'paid' | 'declined' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState(
@@ -38,6 +39,7 @@ export function TipButton({ creatorId, creatorName, defaultAmountAtomic }: TipBu
         body: JSON.stringify({
           reader_id: getReaderId(),
           creator_id: creatorId,
+          content_contract: contentContract,
           amount_atomic: selected,
         }),
       });

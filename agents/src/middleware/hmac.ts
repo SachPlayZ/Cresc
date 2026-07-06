@@ -42,13 +42,3 @@ export function hmacAuth(req: Request, res: Response, next: NextFunction): void 
 
   next();
 }
-
-// Middleware that captures raw body before JSON parse (needed for HMAC)
-export function captureRawBody(req: Request, _res: Response, next: NextFunction): void {
-  let data = '';
-  req.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-  req.on('end', () => {
-    (req as Request & { rawBody: string }).rawBody = data;
-    next();
-  });
-}

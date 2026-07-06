@@ -3,6 +3,7 @@
 // --- New architecture types ---
 
 export type Article = {
+  id?: string;
   slug: string;
   creator_id: string;
   title: string;
@@ -10,6 +11,12 @@ export type Article = {
   topics: string[];
   base_price_atomic: string;
   current_price_atomic: string;
+  content_id: string | null;
+  content_contract: string | null;
+  metadata_uri: string | null;
+  metadata_hash: string | null;
+  factory_tx: string | null;
+  active: boolean;
   ghost_post_id: string | null;
   ghost_instance_url: string | null;
   created_at: string;
@@ -45,6 +52,8 @@ export type PaymentEvent = {
   amount_usdc: string;   // atomic integer string
   network: string;
   gateway_tx: string | null;
+  pay_to?: string | null;
+  content_contract?: string | null;
   reader_id: string | null;
   article_slug: string | null;
   request_id: string | null;
@@ -64,6 +73,7 @@ export type Withdrawal = {
   id: string;
   creator_id: string;
   amount_atomic: string;
+  content_contract?: string | null;
   destination_chain: string;
   destination_address: string;
   status: 'submitted' | 'confirmed' | 'failed';
@@ -76,7 +86,7 @@ export type Withdrawal = {
 export type Creator = {
   id: string;
   display_name: string;
-  wallet_address: string;
+  wallet_address: string | null;
   created_at: string;
   circle_wallet_id?: string | null;
   eoa_address?: string | null;
@@ -87,21 +97,3 @@ export type Creator = {
   ghost_webhook_secret?: string | null;
 };
 
-export type Piece = {
-  id: string;
-  creator_id: string;
-  title: string;
-  body: string;
-  kind: 'article' | 'video';
-  length_chars: number;
-  topic_tags: string[];
-  objective: 'MAX_REVENUE' | 'MAX_REACH';
-  current_price: string;
-  reserve: string;
-  ceiling: string;
-  status: 'listed' | 'delisted' | 'draft';
-  created_at: string;
-  ghost_post_id?: string | null;
-  ghost_slug?: string | null;
-  ghost_instance_url?: string | null;
-};

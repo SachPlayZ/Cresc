@@ -31,9 +31,9 @@ import {
 } from './config.js';
 import { hmacAuth } from './middleware/hmac.js';
 import { evaluateAndPay, type ArticleInput } from './workers/reader-agent.js';
-import { executeGatewayMint } from './workers/withdraw.js';
 import { startWatcher } from './workers/watcher.js';
 import { startAudit } from './workers/audit.js';
+import { ensureContentContract, withdrawFromContent, type ContentInput } from './workers/content-contracts.js';
 
 validateAgentConfig();
 
@@ -62,7 +62,7 @@ const DECIMALS_ABI = [{
 async function assertStartup(): Promise<void> {
   // 1. SELLER_PRIVATE_KEY must be absent
   if (process.env.SELLER_PRIVATE_KEY) {
-    throw new Error('[startup] SELLER_PRIVATE_KEY must NOT be set on EC2 — creator = Circle wallet, no raw key');
+    throw new Error('[startup] SELLER_PRIVATE_KEY must NOT be set on EC2 — creator payouts are ContentVault withdrawals (direct or CONTENT_TUNER_PRIVATE_KEY-relayed signed withdrawals), never an app-held raw creator key');
   }
   if (!isPaymentMockMode) {
     if (!BUYER_PRIVATE_KEY) {
@@ -102,11 +102,51 @@ export function getGatewayClient(): InstanceType<typeof GatewayClient> | null {
   return _gatewayClient;
 }
 
-function generateUnlockToken(slug: string, readerId: string): string {
+function generateUnlockToken(site: string, slug: string, readerId: string): string {
   const expiry = Math.floor(Date.now() / 1000) + 3600;
-  const data = `${expiry}:${slug}:${readerId}`;
+  const data = `${expiry}:${site}:${slug}:${readerId}`;
   const sig = crypto.createHmac('sha256', INTERNAL_HMAC_SECRET).update(data).digest('hex');
   return `${data}:${sig}`;
+}
+
+function verifyGhostSignature(rawBody: string, signatureHeader: string, webhookSecret: string): boolean {
+  try {
+    const sha256Part = signatureHeader.split(',').find((p) => p.trim().startsWith('sha256='));
+    if (!sha256Part) return false;
+    const receivedHex = sha256Part.trim().replace('sha256=', '');
+    const expected = crypto
+      .createHmac('sha256', Buffer.from(webhookSecret))
+      .update(rawBody)
+      .digest();
+    const received = Buffer.from(receivedHex, 'hex');
+    return received.length === expected.length && crypto.timingSafeEqual(received, expected);
+  } catch {
+    return false;
+  }
+}
+
+async function upsertContent(input: ContentInput): Promise<Record<string, unknown>> {
+  const deployment = await ensureContentContract(db, input);
+  const { error } = await db.from('articles').upsert({
+    slug: input.slug,
+    creator_id: input.creator_id,
+    title: input.title,
+    excerpt: input.excerpt,
+    topics: [],
+    base_price_atomic: input.initial_price_atomic ?? 50000,
+    current_price_atomic: input.initial_price_atomic ?? 50000,
+    ghost_post_id: input.ghost_post_id,
+    ghost_instance_url: input.ghost_instance_url,
+    content_id: deployment.content_id,
+    content_contract: deployment.content_contract,
+    metadata_uri: deployment.metadata_uri,
+    metadata_hash: deployment.metadata_hash,
+    factory_tx: deployment.tx_hash,
+    active: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'creator_id,ghost_post_id' });
+  if (error) throw error;
+  return deployment;
 }
 
 // --- Gateway redeposit loop (self-healing, with in-flight guard and retry) ---
@@ -228,12 +268,14 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
     return;
   }
 
-  // Idempotency: check full triple (reader_id, article_slug, request_id)
+  // Idempotency: check full triple (reader_id, content_contract, request_id).
+  // content_contract must be matched case-insensitively — viem returns checksummed
+  // (mixed-case) addresses but the DB unique index is on lower(content_contract).
   const { data: existing } = await db
     .from('payment_events')
     .select('id')
     .eq('reader_id', reader_id)
-    .eq('article_slug', article.slug)
+    .ilike('content_contract', article.content_contract ?? '')
     .eq('request_id', request_id)
     .maybeSingle();
 
@@ -242,7 +284,7 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
       decision: 'paid',
       gates: { budget: true, quality: 1, interest: 1, confidence: 100 },
       payment: { tx: '0xalready-paid', amount_atomic: article.price_atomic, settled_at: new Date().toISOString() },
-      unlock_token: generateUnlockToken(article.slug, reader_id),
+      unlock_token: generateUnlockToken(article.creator_id, article.slug, reader_id),
     });
     return;
   }
@@ -254,16 +296,108 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
   res.status(result.decision === 'error' ? 502 : 200).json(result);
 });
 
+app.post('/agent/content/upsert', hmacAuth, async (req: Request, res: Response) => {
+  try {
+    const input = req.body as Partial<ContentInput>;
+    if (!input.creator_id || !input.creator_wallet || !input.slug || !input.ghost_post_id || !input.title) {
+      res.status(400).json({ error: 'creator_id, creator_wallet, slug, ghost_post_id, title required' });
+      return;
+    }
+    const deployment = await upsertContent({
+      creator_id: input.creator_id,
+      creator_wallet: input.creator_wallet,
+      slug: input.slug,
+      ghost_post_id: input.ghost_post_id,
+      title: input.title,
+      excerpt: input.excerpt ?? '',
+      ghost_instance_url: input.ghost_instance_url ?? null,
+      initial_price_atomic: input.initial_price_atomic ?? 50000,
+    });
+    res.json({ ok: true, deployment });
+  } catch (err) {
+    res.status(502).json({ error: String(err) });
+  }
+});
+
+app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
+  try {
+    const rawBody = (req as Request & { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
+    const sigHeader = req.headers['x-ghost-signature'] as string | undefined ?? '';
+    const siteParam = typeof req.query.site === 'string' ? req.query.site : '';
+
+    if (!siteParam) {
+      res.status(400).json({ error: 'site query param required' });
+      return;
+    }
+
+    const { data: creator } = await db
+      .from('creators')
+      .select('id, ghost_webhook_secret, ghost_instance_url, eoa_address')
+      .eq('id', siteParam)
+      .single();
+
+    if (!creator?.ghost_webhook_secret || !verifyGhostSignature(rawBody, sigHeader, creator.ghost_webhook_secret as string)) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+
+    const body = req.body as Record<string, unknown>;
+    const post = body.post as Record<string, Record<string, unknown>> | undefined;
+    const current = post?.current as Record<string, unknown> | undefined;
+    const previous = post?.previous as Record<string, unknown> | undefined;
+    const ghostPostId = (current?.id ?? previous?.id) as string | undefined;
+    if (!ghostPostId) {
+      res.json({ ok: true });
+      return;
+    }
+
+    const status = current?.status as string | undefined;
+    const isDeleted = !current || Object.keys(current).length === 0;
+    if (isDeleted || status === 'deleted' || (status && status !== 'published')) {
+      await db.from('articles').update({ active: false, updated_at: new Date().toISOString() })
+        .eq('creator_id', siteParam)
+        .eq('ghost_post_id', ghostPostId);
+      res.json({ ok: true });
+      return;
+    }
+
+    if (!creator.eoa_address) {
+      res.status(400).json({ error: 'creator wallet not configured' });
+      return;
+    }
+
+    const deployment = await upsertContent({
+      creator_id: siteParam,
+      creator_wallet: creator.eoa_address as string,
+      slug: (current?.slug as string | undefined) ?? ghostPostId,
+      ghost_post_id: ghostPostId,
+      title: (current?.title as string | undefined) ?? '',
+      excerpt: (current?.custom_excerpt as string | undefined) ?? '',
+      ghost_instance_url: creator.ghost_instance_url as string | null,
+      initial_price_atomic: 50000,
+    });
+
+    res.json({ ok: true, deployment });
+  } catch (err) {
+    res.status(502).json({ error: String(err) });
+  }
+});
+
 // Tip endpoint (HMAC-protected) — budget gate only
 app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
-  const { reader_id, creator_id, amount_atomic } = req.body as {
+  const { reader_id, creator_id, content_contract, amount_atomic } = req.body as {
     reader_id?: string;
     creator_id?: string;
+    content_contract?: string;
     amount_atomic?: string;
   };
 
-  if (!reader_id || !creator_id || !amount_atomic) {
-    res.status(400).json({ error: 'reader_id, creator_id, amount_atomic required' });
+  if (!reader_id || !creator_id || !content_contract || !amount_atomic) {
+    res.status(400).json({ error: 'reader_id, creator_id, content_contract, amount_atomic required' });
+    return;
+  }
+  if (!/^[0-9]+$/.test(amount_atomic) || BigInt(amount_atomic) <= 0n) {
+    res.status(400).json({ error: 'amount_atomic must be a positive atomic USDC integer' });
     return;
   }
 
@@ -305,7 +439,7 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
 
   try {
     // x402 payment — PAYMENT-SIGNATURE is attached by GatewayClient.pay(), not HMAC
-    const tipUrl = `${APP_BASE_URL}/api/x402/tip/${encodeURIComponent(creator_id)}?amount=${encodeURIComponent(amount_atomic)}&r=${encodeURIComponent(reader_id)}`;
+    const tipUrl = `${APP_BASE_URL}/api/x402/tip/${encodeURIComponent(content_contract)}?amount=${encodeURIComponent(amount_atomic)}&r=${encodeURIComponent(reader_id)}&creator=${encodeURIComponent(creator_id)}`;
     const payResult = await client.pay(tipUrl, { method: 'GET' });
 
     if (payResult.status !== 200 && payResult.status !== 201) {
@@ -333,27 +467,55 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
   }
 });
 
-// Gateway-mint endpoint — called by Vercel /api/withdraw/submit after UCW BurnIntent signing.
-// Uses buyer EOA to submit attestation to GatewayMinter contract (HMAC-protected).
 app.post('/agent/gateway-mint', hmacAuth, async (req: Request, res: Response) => {
-  const { attestation, attestationSig } = req.body as {
-    attestation?: string;
-    attestationSig?: string;
-  };
+  void req;
+  res.status(410).json({ error: 'deprecated: use /agent/withdraw-content' });
+});
 
-  if (!attestation || !attestationSig) {
-    res.status(400).json({ error: 'attestation and attestationSig required' });
+app.post('/agent/withdraw-content', hmacAuth, async (req: Request, res: Response) => {
+  const { creator_id, content_contract, destination_address, amount_atomic, nonce, v, r, s } = req.body as {
+    creator_id?: string;
+    content_contract?: string;
+    destination_address?: string;
+    amount_atomic?: string;
+    nonce?: string;
+    v?: number;
+    r?: string;
+    s?: string;
+  };
+  if (!creator_id || !content_contract || !destination_address || !amount_atomic || !nonce || v === undefined || !r || !s) {
+    res.status(400).json({ error: 'creator_id, content_contract, destination_address, amount_atomic, nonce, v, r, s required' });
     return;
   }
-
-  if (isPaymentMockMode || !BUYER_PRIVATE_KEY) {
-    res.json({ txHash: '0x' + 'ab'.repeat(32) });
+  if (!/^[0-9]+$/.test(amount_atomic)) {
+    res.status(400).json({ error: 'amount_atomic must be a positive atomic USDC integer' });
+    return;
+  }
+  if (!/^[0-9]+$/.test(nonce)) {
+    res.status(400).json({ error: 'nonce must be a non-negative integer' });
     return;
   }
 
   try {
-    const txHash = await executeGatewayMint(attestation, attestationSig);
-    res.json({ txHash });
+    const { data: article } = await db
+      .from('articles')
+      .select('slug')
+      .eq('creator_id', creator_id)
+      .ilike('content_contract', content_contract)
+      .eq('active', true)
+      .maybeSingle();
+    if (!article) {
+      res.status(403).json({ error: 'content contract does not belong to creator' });
+      return;
+    }
+    const txHash = await withdrawFromContent(
+      content_contract,
+      destination_address,
+      BigInt(amount_atomic),
+      BigInt(nonce),
+      { v: Number(v), r: r as `0x${string}`, s: s as `0x${string}` }
+    );
+    res.json({ txHash: txHash ?? '0xmock-content-withdraw' });
   } catch (err) {
     res.status(502).json({ error: String(err) });
   }

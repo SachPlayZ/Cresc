@@ -3,6 +3,66 @@
 // Full HTML is only fetched at read-time (post x402 settlement) — never pre-unlock.
 
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+
+// Blocks SSRF via a creator-supplied Ghost instance URL (e.g. pointing at
+// 169.254.169.254 or an internal address). https-only, and rejects both literal
+// private/loopback/link-local IPs and hostnames that resolve to them.
+export async function assertPublicHttpsUrl(urlString: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new Error('invalid instance URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('instance URL must use https://');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.local')) {
+    throw new Error('instance URL must not point to a local/internal host');
+  }
+
+  const addresses: string[] = [];
+  if (net.isIP(hostname)) {
+    addresses.push(hostname);
+  } else {
+    const results = await dns.lookup(hostname, { all: true }).catch(() => []);
+    addresses.push(...results.map((r) => r.address));
+  }
+  if (addresses.length === 0) {
+    throw new Error('instance URL host could not be resolved');
+  }
+  for (const addr of addresses) {
+    if (isPrivateOrLoopbackIp(addr)) {
+      throw new Error('instance URL must not point to a private/internal address');
+    }
+  }
+}
+
+function isPrivateOrLoopbackIp(addr: string): boolean {
+  if (net.isIPv4(addr)) {
+    const parts = addr.split('.').map(Number);
+    const [a, b] = parts;
+    if (a === 127) return true; // loopback
+    if (a === 10) return true; // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16
+    if (a === 169 && b === 254) return true; // link-local incl. cloud metadata
+    if (a === 0) return true; // 0.0.0.0/8
+    return false;
+  }
+  if (net.isIPv6(addr)) {
+    const lower = addr.toLowerCase();
+    if (lower === '::1') return true; // loopback
+    if (lower.startsWith('fe80:')) return true; // link-local
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local
+    return false;
+  }
+  return false;
+}
 
 export type GhostPost = {
   id: string;            // Ghost UUID — stored as pieces.ghost_post_id
@@ -127,25 +187,3 @@ export function ghostPostToPieceInsert(
   };
 }
 
-// Verifies a Ghost webhook HMAC signature.
-// Header format: "sha256=<hex>, t=<unix_timestamp>"
-export function verifyGhostSignature(
-  rawBody: string,
-  signatureHeader: string,
-  webhookSecret: string
-): boolean {
-  try {
-    const sha256Part = signatureHeader.split(',').find((p) => p.trim().startsWith('sha256='));
-    if (!sha256Part) return false;
-    const receivedHex = sha256Part.trim().replace('sha256=', '');
-    const expected = crypto
-      .createHmac('sha256', Buffer.from(webhookSecret))
-      .update(rawBody)
-      .digest();
-    const received = Buffer.from(receivedHex, 'hex');
-    if (received.length !== expected.length) return false;
-    return crypto.timingSafeEqual(received, expected);
-  } catch {
-    return false;
-  }
-}

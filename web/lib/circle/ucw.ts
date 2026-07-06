@@ -1,7 +1,7 @@
 /**
  * lib/circle/ucw.ts — Circle user-controlled wallets backend client.
  * Server-side only (holds CIRCLE_API_KEY, never exposed to browser).
- * Handles: device token creation, wallet challenge creation, wallet listing, signTypedData.
+ * Handles: device token creation, wallet initialization, and wallet listing.
  */
 
 import { createRequire } from 'node:module';
@@ -24,8 +24,6 @@ function getClient(): CircleUserControlledWalletsClient {
   }
   return _client;
 }
-
-export const isUcwMode = !!CIRCLE_API_KEY;
 
 /** Step 1 of social login: exchange deviceId for deviceToken + deviceEncryptionKey. */
 export async function createDeviceToken(
@@ -78,22 +76,23 @@ export async function listUserWallets(userToken: string): Promise<UcwWallet[]> {
 }
 
 /**
- * Create an EIP-712 signTypedData challenge (for BurnIntent signing during withdrawal).
- * Returns challengeId — browser executes this via W3S SDK.
+ * Request a signature over EIP-712 typed data from the user's UCW wallet — used for
+ * the ContentVault `withdrawSigned` authorization (creator signs to, amountAtomic, nonce;
+ * see contracts/src/ContentVault.sol). Frontend completes it via sdk.execute(challengeId).
  */
-export async function createSignTypedDataChallenge(
+export async function requestTypedDataSignature(
   userToken: string,
   walletId: string,
-  eip712Data: Record<string, unknown>
-): Promise<string> {
+  typedData: unknown
+): Promise<{ challengeId: string }> {
   const resp = await getClient().signTypedData({
     userToken,
     walletId,
-    data: JSON.stringify(eip712Data),
+    data: JSON.stringify(typedData),
   });
   const challengeId = resp.data?.challengeId;
-  if (!challengeId) throw new Error('[ucw] createSignTypedDataChallenge: no challengeId');
-  return challengeId;
+  if (!challengeId) throw new Error('[ucw] requestTypedDataSignature: no challengeId');
+  return { challengeId };
 }
 
 function isCircleError(err: unknown, code: number): boolean {

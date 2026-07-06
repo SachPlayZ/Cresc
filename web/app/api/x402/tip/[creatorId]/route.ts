@@ -1,4 +1,4 @@
-// GET /api/x402/tip/[creatorId]?amount=<atomic>&r=<readerId>
+// GET /api/x402/tip/[contentContract]?amount=<atomic>&r=<readerId>
 // x402 tip endpoint — same flow as article unlock but for tips.
 //
 // No Payment-Signature → 402 + PAYMENT-REQUIRED header.
@@ -15,41 +15,49 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ creatorId: string }> }
 ) {
-  const { creatorId } = await params;
+  const { creatorId: contentContract } = await params;
   const amountStr = req.nextUrl.searchParams.get('amount');
   const readerId = req.nextUrl.searchParams.get('r') ?? 'anonymous';
+  const creatorId = req.nextUrl.searchParams.get('creator');
   const requestId = req.nextUrl.searchParams.get('rid') ?? null;
 
-  if (!amountStr || isNaN(parseInt(amountStr, 10))) {
+  if (!amountStr || !/^[0-9]+$/.test(amountStr)) {
     return NextResponse.json({ error: 'amount query param required (atomic USDC)' }, { status: 400 });
   }
 
   const amountAtomic = BigInt(amountStr);
+  if (amountAtomic <= 0n) {
+    return NextResponse.json({ error: 'amount must be positive' }, { status: 400 });
+  }
 
   const db = createServerClient();
-  const { data: creator } = await db
-    .from('creators')
-    .select('eoa_address, display_name')
-    .eq('id', creatorId)
-    .single();
-
-  if (!creator?.eoa_address) {
-    return NextResponse.json({ error: 'creator not found or has no wallet' }, { status: 404 });
+  if (!creatorId) {
+    return NextResponse.json({ error: 'creator query param required' }, { status: 400 });
+  }
+  const { data: article } = await db
+    .from('articles')
+    .select('slug')
+    .eq('creator_id', creatorId)
+    .eq('content_contract', contentContract)
+    .eq('active', true)
+    .maybeSingle();
+  if (!article) {
+    return NextResponse.json({ error: 'content contract not found for creator' }, { status: 404 });
   }
 
   const price = { value: amountAtomic, decimals: 6 };
-  const requirements = buildPaymentRequirements(price, creator.eoa_address as string);
+  const requirements = buildPaymentRequirements(price, contentContract);
 
   const sigHeader = req.headers.get('Payment-Signature');
 
   if (!sigHeader) {
-    const resourceUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/api/x402/tip/${encodeURIComponent(creatorId)}?amount=${amountStr}&r=${encodeURIComponent(readerId)}`;
+    const resourceUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/api/x402/tip/${encodeURIComponent(contentContract)}?amount=${amountStr}&r=${encodeURIComponent(readerId)}${creatorId ? `&creator=${encodeURIComponent(creatorId)}` : ''}`;
     const paymentRequired = {
       x402Version: 2,
       accepts: [requirements],
       resource: {
         url: resourceUrl,
-        description: `Tip for ${creator.display_name as string}`,
+        description: `Tip for content ${contentContract}`,
         mimeType: 'application/json',
       },
     };
@@ -85,21 +93,22 @@ export async function GET(
     );
   }
 
-  // Append-only tip record
-  try {
-    await db.from('payment_events').insert({
-      endpoint: `/api/x402/tip/${creatorId}`,
-      payer: result.payer ?? readerId,
-      amount_usdc: amountStr,
-      network: ARC_CAIP2,
-      gateway_tx: result.txHash ?? null,
-      reader_id: readerId,
-      article_slug: null,
-      request_id: requestId,
-      raw: { result, creatorId, readerId, type: 'tip' },
-    });
-  } catch (e) {
-    console.error('[x402/tip] payment_events insert failed:', e);
+  const { error: insertError } = await db.from('payment_events').insert({
+    endpoint: `/api/x402/tip/${contentContract}`,
+    payer: result.payer ?? readerId,
+    amount_usdc: amountStr,
+    network: ARC_CAIP2,
+    gateway_tx: result.txHash ?? null,
+    pay_to: contentContract,
+    content_contract: contentContract,
+    reader_id: readerId,
+    article_slug: null,
+    request_id: requestId,
+    raw: { result, creatorId, contentContract, readerId, type: 'tip' },
+  });
+  if (insertError) {
+    console.error('[x402/tip] payment_events insert failed:', insertError);
+    return NextResponse.json({ error: 'tip settled but event logging failed' }, { status: 500 });
   }
 
   const paymentResponse = {

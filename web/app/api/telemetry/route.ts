@@ -9,6 +9,7 @@ import { createServerClient } from '../../../lib/db';
 type TelemetryBody = {
   reader_id?: string;
   article_slug?: string;
+  site?: string;
   event_type?: 'view' | 'dwell' | 'complete' | 'bounce';
   dwell_ms?: number;
 };
@@ -21,10 +22,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
 
-  const { reader_id, article_slug, event_type, dwell_ms } = body;
+  const { reader_id, article_slug, site, event_type, dwell_ms } = body;
 
-  if (!reader_id || !article_slug || !event_type) {
-    return NextResponse.json({ error: 'reader_id, article_slug, event_type required' }, { status: 400 });
+  if (!reader_id || !article_slug || !site || !event_type) {
+    return NextResponse.json({ error: 'reader_id, article_slug, site, event_type required' }, { status: 400 });
   }
 
   const allowed = ['view', 'dwell', 'complete', 'bounce'] as const;
@@ -39,6 +40,8 @@ export async function POST(req: NextRequest) {
     .from('articles')
     .select('slug')
     .eq('slug', article_slug)
+    .eq('creator_id', site)
+    .eq('active', true)
     .single();
 
   if (!article) {

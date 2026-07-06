@@ -18,10 +18,11 @@ import {
 } from '../config.js';
 
 export type ArticleInput = {
+  creator_id: string;
   slug: string;
   unlock_url: string;
   price_atomic: string;   // atomic bigint string
-  creator_wallet: string;
+  content_contract: string;
   title: string;
   excerpt: string;
   topics: string[];

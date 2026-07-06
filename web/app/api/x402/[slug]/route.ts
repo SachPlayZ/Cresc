@@ -10,15 +10,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { createServerClient } from '../../../../lib/db';
 import { getArticleBySlug } from '../../../../lib/repo/articles';
-import { buildPaymentRequirements, verifyAndSettle } from '../../../../lib/circle/index';
+import { buildPaymentRequirements, readContentPriceAtomic, verifyAndSettle } from '../../../../lib/circle/index';
 import {
   INTERNAL_HMAC_SECRET,
   ARC_CAIP2,
 } from '../../../../lib/config';
 
-function generateUnlockToken(slug: string, readerId: string): string {
+function generateUnlockToken(site: string, slug: string, readerId: string): string {
   const expiry = Math.floor(Date.now() / 1000) + 3600;
-  const data = `${expiry}:${slug}:${readerId}`;
+  const data = `${expiry}:${site}:${slug}:${readerId}`;
   const sig = crypto.createHmac('sha256', INTERNAL_HMAC_SECRET).update(data).digest('hex');
   return `${data}:${sig}`;
 }
@@ -28,21 +28,26 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
+  const site = req.nextUrl.searchParams.get('site');
   const readerId = req.nextUrl.searchParams.get('r') ?? 'anonymous';
+  if (!site) {
+    return NextResponse.json({ error: 'site query param required' }, { status: 400 });
+  }
 
   const db = createServerClient();
-  const article = await getArticleBySlug(db, slug);
+  const article = await getArticleBySlug(db, slug, site);
   if (!article) {
     return NextResponse.json({ error: 'article not found' }, { status: 404 });
   }
 
-  const creatorAddress = article.creators?.eoa_address ?? '';
-  if (!creatorAddress) {
-    return NextResponse.json({ error: 'creator wallet not configured' }, { status: 503 });
+  const contentContract = article.content_contract ?? '';
+  if (!contentContract) {
+    return NextResponse.json({ error: 'content contract not deployed' }, { status: 503 });
   }
 
-  const price = { value: BigInt(article.current_price_atomic), decimals: 6 };
-  const requirements = buildPaymentRequirements(price, creatorAddress);
+  const priceAtomic = await readContentPriceAtomic(contentContract, String(article.current_price_atomic));
+  const price = { value: BigInt(priceAtomic), decimals: 6 };
+  const requirements = buildPaymentRequirements(price, contentContract);
 
   const requestId = req.nextUrl.searchParams.get('rid') ?? null;
   const sigHeader = req.headers.get('Payment-Signature');
@@ -50,7 +55,7 @@ export async function GET(
   if (!sigHeader) {
     // No payment yet — return 402 with PAYMENT-REQUIRED header.
     const ridParam = requestId ? `&rid=${encodeURIComponent(requestId)}` : '';
-    const resourceUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/api/x402/${encodeURIComponent(slug)}?r=${encodeURIComponent(readerId)}${ridParam}`;
+    const resourceUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/api/x402/${encodeURIComponent(slug)}?site=${encodeURIComponent(site)}&r=${encodeURIComponent(readerId)}${ridParam}`;
     const paymentRequired = {
       x402Version: 2,
       accepts: [requirements],
@@ -62,7 +67,7 @@ export async function GET(
     };
     const encoded = Buffer.from(JSON.stringify(paymentRequired)).toString('base64');
     return new NextResponse(
-      JSON.stringify({ error: 'Payment Required', price_atomic: String(article.current_price_atomic) }),
+      JSON.stringify({ error: 'Payment Required', price_atomic: priceAtomic, content_contract: contentContract }),
       {
         status: 402,
         headers: {
@@ -71,6 +76,20 @@ export async function GET(
         },
       }
     );
+  }
+
+  if (requestId) {
+    const { data: existing } = await db
+      .from('payment_events')
+      .select('id')
+      .eq('reader_id', readerId)
+      .eq('content_contract', contentContract)
+      .eq('request_id', requestId)
+      .maybeSingle();
+    if (existing) {
+      const unlockToken = generateUnlockToken(site, slug, readerId);
+      return NextResponse.json({ unlock_token: unlockToken, slug });
+    }
   }
 
   // Payment signature present — settle.
@@ -93,23 +112,25 @@ export async function GET(
     );
   }
 
-  const unlockToken = generateUnlockToken(slug, readerId);
+  const unlockToken = generateUnlockToken(site, slug, readerId);
 
   // Write payment_events (append-only, CLAUDE.md invariant §8).
-  try {
-    await db.from('payment_events').insert({
-      endpoint: `/api/x402/${slug}`,
-      payer: result.payer ?? readerId,
-      amount_usdc: String(article.current_price_atomic),
-      network: ARC_CAIP2,
-      gateway_tx: result.txHash ?? null,
-      reader_id: readerId,
-      article_slug: slug,
-      request_id: requestId,
-      raw: { result, slug, readerId },
-    });
-  } catch (e) {
-    console.error('[x402] payment_events insert failed:', e);
+  const { error: insertError } = await db.from('payment_events').insert({
+    endpoint: `/api/x402/${slug}`,
+    payer: result.payer ?? readerId,
+    amount_usdc: priceAtomic,
+    network: ARC_CAIP2,
+    gateway_tx: result.txHash ?? null,
+    pay_to: contentContract,
+    content_contract: contentContract,
+    reader_id: readerId,
+    article_slug: slug,
+    request_id: requestId,
+    raw: { result, slug, site, readerId },
+  });
+  if (insertError) {
+    console.error('[x402] payment_events insert failed:', insertError);
+    return NextResponse.json({ error: 'payment settled but event logging failed' }, { status: 500 });
   }
 
   const paymentResponse = {

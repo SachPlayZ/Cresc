@@ -5,11 +5,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { createServerClient } from '../../../../lib/db';
-import { GhostAdminClient } from '../../../../lib/ghost/index';
+import { GhostAdminClient, assertPublicHttpsUrl } from '../../../../lib/ghost/index';
 import { getCreator, updateGhostConnection } from '../../../../lib/repo/creators';
-import { upsertGhostArticle } from '../../../../lib/repo/articles';
+import { assertCreatorOwnership } from '../../../../lib/auth/creator';
+import { buildHmacHeaders } from '../../../../lib/hmac';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+const EC2_AGENT_BASE = process.env.EC2_AGENT_BASE_URL ?? '';
 
 export async function GET(req: NextRequest) {
   const creatorId = req.nextUrl.searchParams.get('creatorId');
@@ -26,19 +28,36 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { instanceUrl, adminKey, creatorId } = await req.json() as {
+  const { instanceUrl, adminKey, creatorId, userToken } = await req.json() as {
     instanceUrl?: string;
     adminKey?: string;
     creatorId?: string;
+    userToken?: string;
   };
 
-  if (!instanceUrl || !adminKey || !creatorId) {
-    return NextResponse.json({ error: 'instanceUrl, adminKey, creatorId required' }, { status: 400 });
+  if (!instanceUrl || !adminKey || !creatorId || !userToken) {
+    return NextResponse.json({ error: 'instanceUrl, adminKey, creatorId, userToken required' }, { status: 400 });
+  }
+  if (!EC2_AGENT_BASE) {
+    return NextResponse.json({ error: 'EC2_AGENT_BASE_URL required for contract-native Ghost sync' }, { status: 503 });
   }
 
   const db = createServerClient();
   const creator = await getCreator(db, creatorId);
   if (!creator) return NextResponse.json({ error: 'creator not found' }, { status: 404 });
+  try {
+    await assertCreatorOwnership(db, creatorId, userToken);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'ownership check failed' }, { status: 403 });
+  }
+  const creatorWallet = creator.eoa_address;
+  if (!creatorWallet) return NextResponse.json({ error: 'creator wallet not provisioned' }, { status: 400 });
+
+  try {
+    await assertPublicHttpsUrl(instanceUrl);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'invalid instance URL' }, { status: 400 });
+  }
 
   const ghostClient = new GhostAdminClient(instanceUrl, adminKey);
   const valid = await ghostClient.validateKey();
@@ -64,17 +83,25 @@ export async function POST(req: NextRequest) {
     const posts = await ghostClient.listPosts();
     for (const post of posts) {
       try {
-        await upsertGhostArticle(db, {
-          slug: post.slug,
+        const agentPayload = {
           creator_id: creatorId,
+          creator_wallet: creatorWallet,
+          slug: post.slug,
+          ghost_post_id: post.id,
           title: post.title,
           excerpt: post.custom_excerpt ?? '',
-          topics: [],
-          base_price_atomic: 50000,    // $0.05 starting price
-          current_price_atomic: 50000,
-          ghost_post_id: post.id,
           ghost_instance_url: instanceUrl,
+          initial_price_atomic: 50000,
+        };
+        const rawBody = JSON.stringify(agentPayload);
+        const agentRes = await fetch(`${EC2_AGENT_BASE}/agent/content/upsert`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...buildHmacHeaders(rawBody) },
+          body: rawBody,
         });
+        if (!agentRes.ok) {
+          throw new Error(`agent content upsert failed: ${await agentRes.text().catch(() => '')}`);
+        }
         syncedCount++;
       } catch (err) {
         errors.push(`${post.slug}: ${err instanceof Error ? err.message : String(err)}`);
@@ -87,7 +114,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const webhookUrl = `${APP_URL}/api/ghost/sync?site=${creatorId}`;
+  const webhookUrl = `${EC2_AGENT_BASE || APP_URL}/agent/ghost/webhook?site=${creatorId}`;
   const snippetHtml = `<script src="${APP_URL}/cresc-ghost.js" data-site="${creatorId}"></script>`;
 
   return NextResponse.json({

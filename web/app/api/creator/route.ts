@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "../../../lib/db";
-import { upsertCreator, getCreatorByWallet } from "../../../lib/repo/index";
+import { createCreator, getCreatorByWallet } from "../../../lib/repo/index";
+import { generateOnboardingToken } from "../../../lib/auth/creator";
 
-// POST /api/creator — create or return existing creator.
-// Wallet provisioning happens separately via /api/ucw/* (user-controlled wallet flow).
+// POST /api/creator — always creates a fresh creator row.
+// Wallet provisioning happens separately via /api/ucw/* (user-controlled wallet flow);
+// until a wallet is bound, `onboarding_token` is the caller's proof that they are the
+// one who just created this row (see web/lib/auth/creator.ts).
 export async function POST(req: NextRequest) {
   try {
     const { display_name, wallet_address } = await req.json() as {
@@ -16,12 +19,12 @@ export async function POST(req: NextRequest) {
     }
 
     const db = createServerClient();
-    const creator = await upsertCreator(db, {
+    const creator = await createCreator(db, {
       display_name: display_name.trim(),
       wallet_address: (wallet_address ?? '').trim().toLowerCase(),
     });
 
-    return NextResponse.json({ creator });
+    return NextResponse.json({ creator, onboarding_token: generateOnboardingToken(creator.id) });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

@@ -26,7 +26,7 @@ export function WithdrawSection({ creator }: { creator: Creator }) {
   const deviceEncKey = cookies.circle_device_enc_key as string | undefined;
 
   const [amount, setAmount] = useState("");
-  const [destChain, setDestChain] = useState("arc");
+  const [contentContract, setContentContract] = useState("");
   const [destAddress, setDestAddress] = useState("");
   const [status, setStatus] = useState<Status>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
@@ -90,6 +90,39 @@ export function WithdrawSection({ creator }: { creator: Creator }) {
 
     setStatus('signing');
     try {
+      // Step 1: get a signTypedData challenge for the EIP-712 Withdraw message
+      // (creator's own UCW wallet authorizes exactly this to/amount/nonce — see
+      // contracts/src/ContentVault.sol withdrawSigned).
+      const signReqRes = await fetch('/api/withdraw/sign-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          creator_id: creatorId,
+          userToken,
+          amount_atomic: amountAtomic,
+          content_contract: contentContract,
+          destination_address: destAddress,
+        }),
+      });
+      const signReq = await signReqRes.json() as { challengeId?: string; nonce?: string; error?: string };
+      if (!signReqRes.ok || !signReq.challengeId || !signReq.nonce) {
+        throw new Error(signReq.error ?? 'Failed to prepare signature request');
+      }
+
+      const sdk = sdkRef.current;
+      if (!sdk) throw new Error('SDK not initialized');
+      sdk.setAuthentication({ userToken, encryptionKey: encKey });
+
+      const signature = await new Promise<string>((resolve, reject) => {
+        sdk.execute(signReq.challengeId!, (err, result) => {
+          if (err) { reject(new Error('Signing failed: ' + String(err))); return; }
+          const sig = (result as { signature?: string } | undefined)?.signature;
+          if (!sig) { reject(new Error('No signature returned')); return; }
+          resolve(sig);
+        });
+      });
+
+      setStatus('submitting');
       const prepRes = await fetch('/api/withdraw/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,56 +130,21 @@ export function WithdrawSection({ creator }: { creator: Creator }) {
           creator_id: creatorId,
           userToken,
           amount_atomic: amountAtomic,
-          destination_chain: destChain,
+          content_contract: contentContract,
           destination_address: destAddress,
+          nonce: signReq.nonce,
+          signature,
         }),
       });
       const prep = await prepRes.json() as {
-        challengeId?: string;
-        burnIntent?: Record<string, unknown>;
+        status?: string;
+        txHash?: string;
         withdrawalId?: string | null;
         error?: string;
       };
       if (!prepRes.ok || prep.error) throw new Error(prep.error ?? 'Prepare failed');
-
-      const sdk = sdkRef.current;
-      if (!sdk) throw new Error('SDK not initialized');
-
-      sdk.setAuthentication({ userToken, encryptionKey: encKey });
-      sdk.execute(prep.challengeId!, async (err, result) => {
-        if (err) {
-          setErrorMsg("Signing failed: " + String(err));
-          setStatus('error');
-          return;
-        }
-
-        const signature = (result as { signature?: string } | undefined)?.signature;
-        if (!signature) {
-          setErrorMsg("No signature returned from challenge.");
-          setStatus('error');
-          return;
-        }
-
-        setStatus('submitting');
-        try {
-          const submitRes = await fetch('/api/withdraw/submit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              burnIntent: prep.burnIntent,
-              signature,
-              withdrawalId: prep.withdrawalId,
-            }),
-          });
-          const submit = await submitRes.json() as { txHash?: string; error?: string };
-          if (!submitRes.ok || submit.error) throw new Error(submit.error ?? 'Submit failed');
-          setTxHash(submit.txHash!);
-          setStatus('done');
-        } catch (e) {
-          setErrorMsg(String(e));
-          setStatus('error');
-        }
-      });
+      setTxHash(prep.txHash!);
+      setStatus('done');
     } catch (e) {
       setErrorMsg(String(e));
       setStatus('error');
@@ -177,8 +175,8 @@ export function WithdrawSection({ creator }: { creator: Creator }) {
                 className="h-9 text-sm font-mono" />
             </div>
             <div className="flex-1">
-              <label className="font-mono text-xs text-muted-foreground block mb-1">Chain</label>
-              <Input placeholder="arc" value={destChain} onChange={(e) => setDestChain(e.target.value)}
+              <label className="font-mono text-xs text-muted-foreground block mb-1">Content contract</label>
+              <Input placeholder="0x…" value={contentContract} onChange={(e) => setContentContract(e.target.value)}
                 className="h-9 text-sm font-mono" />
             </div>
           </div>

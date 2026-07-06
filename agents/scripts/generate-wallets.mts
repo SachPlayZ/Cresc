@@ -1,6 +1,5 @@
 /**
- * scripts/generate-wallets.mts — generate two EOA wallets for Cresc (seller + buyer).
- * M0: Mirrors the circlefin/arc-nanopayments reference repo pattern.
+ * scripts/generate-wallets.mts — generate EOA operator wallets for Cresc testnet.
  *
  * Usage: npm run generate-wallets
  *
@@ -19,15 +18,15 @@ function generateWallet(label: string) {
   return { label, address: account.address, privateKey };
 }
 
-const seller = generateWallet("SELLER (creator/platform — receives payments)");
-const buyer = generateWallet("BUYER (reader/agent — sends payments)");
+const buyer = generateWallet("BUYER (reader agent — signs x402 payments)");
+const tuner = generateWallet("CONTENT TUNER (agent operator — deploys/tunes/withdraws vaults)");
 
 console.log("\n==========================================================");
 console.log("  Cresc — EOA Wallet Generator (Arc Testnet)");
 console.log("==========================================================");
 console.log("  WARNING: COPY THESE TO .env.local — NEVER commit them!\n");
 
-for (const wallet of [seller, buyer]) {
+for (const wallet of [buyer, tuner]) {
   console.log(`--- ${wallet.label} ---`);
   console.log(`  Address:     ${wallet.address}`);
   console.log(`  Private key: ${wallet.privateKey}`);
@@ -35,17 +34,16 @@ for (const wallet of [seller, buyer]) {
 }
 
 console.log("--- Paste into .env.local ---");
-console.log(`SELLER_ADDRESS=${seller.address}`);
-console.log(`SELLER_PRIVATE_KEY=${seller.privateKey}`);
 console.log(`BUYER_ADDRESS=${buyer.address}`);
 console.log(`BUYER_PRIVATE_KEY=${buyer.privateKey}`);
+console.log(`CONTENT_TUNER_ADDRESS=${tuner.address}`);
+console.log(`CONTENT_TUNER_PRIVATE_KEY=${tuner.privateKey}`);
 console.log();
 console.log("--- Next steps ---");
 console.log("1. Copy the block above into .env.local");
-console.log("2. Fund SELLER with testnet USDC: https://faucet.circle.com/");
-console.log("   (Select 'Arc Testnet', choose USDC, ~10 USDC/request)");
-console.log("3. Fund BUYER with testnet USDC (same faucet)");
-console.log("4. BUYER must deposit USDC into Gateway once (one-time onchain tx)");
-console.log("   → Handled by lib/circle (M3): client.deposit('1')");
+console.log("2. Fund BUYER with testnet USDC: https://faucet.circle.com/");
+console.log("3. Fund CONTENT_TUNER with enough USDC for Arc gas.");
+console.log("4. BUYER must deposit USDC into Gateway once:");
+console.log("   npx tsx --env-file=.env.local scripts/deposit-gateway.mts --amount 5");
 console.log("5. Verify on: https://testnet.arcscan.app");
 console.log("==========================================================\n");

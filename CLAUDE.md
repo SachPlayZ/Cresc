@@ -39,9 +39,9 @@ These cause silent, expensive bugs if violated. Treat them as hard constraints, 
 
 1. **The x402 buyer is a raw-key EOA. Forced by `ecrecover`.** Gateway verifies payment signatures offchain with `ecrecover`, which cannot recover an SCA's EIP-1271 signature, so SCA wallets are rejected for nanopayments. There is no Circle-Wallets-SDK substitute for the buyer pay path. `BUYER_PRIVATE_KEY` is the **only** live raw key in the system, and it lives **only on EC2**.
 
-2. **The creator/seller is a Circle dev-controlled wallet — no raw key.** The seller never signs an x402 authorization; on the read path it only *verifies and settles* via the facilitator API (keyless). A creator signs exactly once: **withdrawal**, via Circle SDK `signTypedData` on a Gateway burn intent. `SELLER_PRIVATE_KEY` staying **empty is correct** — do not "fix" it.
+2. **The creator/seller is a ContentVault contract — no app-held raw key.** The seller never signs an x402 authorization; on the read path it only *verifies and settles* via the facilitator API (keyless). Creator revenue accrues onchain in a per-content `ContentVault` (see `contracts/src/ContentVault.sol`). A creator withdraws either directly (their own wallet calls `withdraw`/`withdrawAll`) or via a relayed, creator-signed `withdrawSigned` — the creator signs an EIP-712 `Withdraw(to, amountAtomic, nonce)` message via Circle UCW `signTypedData`, and `CONTENT_TUNER_PRIVATE_KEY` (EC2-only) submits it onchain. `SELLER_PRIVATE_KEY` staying **empty is correct** — do not "fix" it.
 
-3. **There is no "EIP-719."** Buyer-pay = **EIP-3009** (transfer-with-authorization). Gateway transfer/withdraw = **EIP-712 `BurnIntent`** against domain `{ name: "GatewayWallet", version: "1" }`. The "Hits X402" step is a `402 Payment Required` carrying a base64 `PAYMENT-REQUIRED` header.
+3. **There is no "EIP-719."** Buyer-pay = **EIP-3009** (transfer-with-authorization), settled through Circle Gateway. Creator withdrawal = **EIP-712 `Withdraw`** against domain `{ name: "ContentVault", version: "1", verifyingContract: <the vault address> }` — not a Gateway `BurnIntent`; that path is deprecated (`/agent/gateway-mint` returns `410`). The "Hits X402" step is a `402 Payment Required` carrying a base64 `PAYMENT-REQUIRED` header.
 
 4. **Money is atomic 6dp integers, end to end.** Every money column is `bigint` (or `numeric(78,0)`) storing atomic USDC. `$0.05 = 50000`. Never a float, never dollars in storage. Convert dollars→atomic only at ingest (`Math.round(dollars * 1e6)`) and atomic→display only at the UI edge. The reference repo's `payment_events.amount_usdc` is `text` — keep it `text` to match the schema, but treat it as an atomic-integer string.
 
@@ -53,7 +53,7 @@ These cause silent, expensive bugs if violated. Treat them as hard constraints, 
 
 8. **`payment_events` is append-only.** RLS: public read, service-role insert. It is the transparent dashboard's source of truth. **It is written by the Vercel `/api/x402/[slug]` route at settlement time — not by the EC2 agent.**
 
-9. **Idempotency.** Key each unlock attempt by `(reader_id, article_slug, request_id)`; check `payment_events` before signing; a settled row means already-paid. A mid-payment crash must not double-pay.
+9. **Idempotency.** Key each unlock attempt by `(reader_id, lower(content_contract), request_id)` — the DB unique index is on `lower(content_contract)`, so always compare case-insensitively (viem returns checksummed addresses). Check `payment_events` before signing; a settled row means already-paid. A mid-payment crash must not double-pay.
 
 ---
 
@@ -61,13 +61,13 @@ These cause silent, expensive bugs if violated. Treat them as hard constraints, 
 
 Three planes, two deploy targets, one settlement rail.
 
-- **Creator (writer):** Circle dev-controlled wallet, one per creator. Signs via Circle SDK (`signTypedData`) — payout only. UI on Vercel, payout on EC2.
+- **Creator (writer):** per-content `ContentVault` contract (see `contracts/src/ContentVault.sol`), deployed by `ContentFactory`. Revenue accrues onchain; withdrawal is direct (creator's own key) or relayed via a creator-signed EIP-712 message. UI on Vercel, relay on EC2.
 - **Reader (+ Reader Agent):** one shared raw-key EOA + per-reader budget rows in Postgres. Signs via `GatewayClient({ privateKey })`. Always-on, EC2.
 - **Settlement:** Circle Gateway on Arc batches EIP-3009 authorizations into one onchain USDC settlement.
 
 **Vercel** (stateless, no hot keys): creator dashboard, Ghost content gate, x402 unlock route (`withGateway` → facilitator `verify`/`settle`), Ghost webhook intake + HMAC internal API.
 
-**EC2** (always-on, holds the one raw key + Circle entity secret): Reader Agent HTTP service + redeposit loop, Watcher worker (hourly repricing), Creator Audit Agent worker, both signing paths (buyer x402 raw key; creator withdrawal Circle SDK). Systemd with `Restart=always`.
+**EC2** (always-on, holds the buyer raw key + the content-tuner relayer key): Reader Agent HTTP service + redeposit loop, Watcher/Pricing worker (hourly `tunePrice` calls), Creator Audit Agent worker, both signing paths (buyer x402 raw key; content-tuner relaying creator-signed withdrawals and price tunes). Systemd with `Restart=always`.
 
 ### Payment flow (critical path)
 
@@ -83,7 +83,7 @@ Reader → POST /api/unlock/:slug (Vercel)
 
 ### unlock_token format
 
-Generated in `web/app/api/x402/[slug]/route.ts`. Format: `${expiry}:${slug}:${readerId}:${hmacSig}` where expiry is unix seconds (1-hour TTL) and sig is `hmacSHA256(INTERNAL_HMAC_SECRET, data)`. Verified by the same route on subsequent content-fetch requests.
+Generated in `web/app/api/x402/[slug]/route.ts`. Format: `${expiry}:${site}:${slug}:${readerId}:${hmacSig}` where expiry is unix seconds (1-hour TTL) and sig is `hmacSHA256(INTERNAL_HMAC_SECRET, data)`. Verified by the same route on subsequent content-fetch requests.
 
 ---
 
@@ -100,7 +100,7 @@ HTTP, not a queue. Reader Agent runs Express; Vercel calls synchronously. No pub
 **Endpoints (EC2, called by Vercel):**
 - `POST /agent/evaluate-and-pay` → `{ decision: paid|declined|error, gates, payment?, unlock_token?, reason?, error? }`. `paid`/`declined` both return `200`; `error` returns `502`.
 - `POST /agent/tip` → budget-gate only, second `pay()` to creator EOA.
-- `POST /agent/withdraw` → Circle burn-intent withdrawal (the one creator-signing path; stays on EC2 for the entity secret).
+- `POST /agent/withdraw-content` → relays a creator-signed `ContentVault.withdrawSigned` call (v/r/s + nonce required). `POST /agent/gateway-mint` is the deprecated old path and always returns `410`.
 - `GET /healthz` → Gateway balance, last-payment timestamp, LLM reachability. **Not HMAC-protected** — must be reachable by external monitors.
 
 ---
@@ -111,7 +111,7 @@ HTTP, not a queue. Reader Agent runs Express; Vercel calls synchronously. No pub
 - **Gate 1 Budget (deterministic, no LLM):** fail if `spent_today + price > daily_budget` OR `spent_session + price > session_budget`. On fail return `declined / reason: "budget_exceeded"` before any LLM call.
 - **Gates 2–4 Quality / Interest / Confidence (one Groq call):** strict-JSON output `{ quality: 0-1, interest: 0-1, confidence: 0-100, reason }`, no prose. Inputs: article `title`/`excerpt`/`topics`/`price_atomic` + reader's last ~20 telemetry rows summarized to topics + avg dwell.
 - **Decision rule (deterministic, after LLM):** pay IFF `budget_ok AND quality ≥ QUALITY_MIN (0.5) AND interest ≥ INTEREST_MIN (0.5) AND confidence ≥ CONFIDENCE_MIN (80)`. Thresholds env-configurable.
-- **Mock mode:** if `LLM_API_KEY` unset, return deterministic stubs (`quality 0.7, interest 0.7, confidence 85`) so the pay loop is testable without Groq.
+- **Mock mode:** if `GROQ_API_KEY` unset, return deterministic stubs (`quality 0.7, interest 0.7, confidence 85`) so the pay loop is testable without Groq.
 
 **Watcher — hourly per active article, on AUDITED counts only:**
 ```
@@ -152,9 +152,9 @@ Stored procedures: `record_reader_spend(p_user_id, p_amount)`, `reset_daily_budg
 - Frontend + x402 seller: Next.js on Vercel.
 - Agents: Node/TS on EC2, systemd (`Restart=always`, `MemoryMax=500M`).
 - Buyer signing (x402): `viem` + `@circle-fin/x402-batching` (raw `BUYER_PRIVATE_KEY`).
-- Creator wallets + payout: `@circle-fin/developer-controlled-wallets` (`signTypedData` + `createContractExecutionTransaction`).
-- LLM: Groq, OpenAI-compatible (`LLM_BASE_URL`/`LLM_MODEL`). No key → mock mode.
-- State: Supabase Postgres. Blobs: S3. Cross-chain payout: **CCTP V2** (V1 is legacy).
+- Creator payout: `contracts/src/ContentVault.sol` (`withdraw`/`withdrawAll`/`withdrawSigned`) + `@circle-fin/user-controlled-wallets` (creator's UCW wallet signs the EIP-712 `Withdraw` message via `signTypedData`).
+- LLM: Groq, OpenAI-compatible (`GROQ_BASE_URL`/`GROQ_MODEL`). No key → mock mode.
+- State: Supabase Postgres. Cross-chain payout: **CCTP V2** (V1 is legacy).
 
 ---
 
@@ -186,7 +186,7 @@ extra: { name: "GatewayWalletBatched", version: "1", verifyingContract: GATEWAY_
 3. On EC2: `BUYER_PRIVATE_KEY` present **and** `SELLER_PRIVATE_KEY` absent.
 4. `INTERNAL_HMAC_SECRET` present on both Vercel and EC2.
 
-Assertions 1–2 are skipped in mock mode (when `LLM_API_KEY` is unset) but should still run in production. `CIRCLE_ENTITY_SECRET` should also be asserted present on EC2 (required for withdrawals). The config reads it from either `CIRCLE_ENTITY_SECRET` or the legacy `ENTITY_SECRET` env var.
+Assertions 1–2 are skipped in mock mode (when `GROQ_API_KEY` is unset) but should still run in production. `CONTENT_TUNER_PRIVATE_KEY` and `CONTENT_FACTORY_ADDRESS` should also be present on EC2 in live payment mode (required for content-contract creation, price tuning, and relayed withdrawals) — `agents/src/config.ts`'s `validateAgentConfig()` enforces this.
 
 ---
 
@@ -197,7 +197,7 @@ Assertions 1–2 are skipped in mock mode (when `LLM_API_KEY` is unset) but shou
 2. Clips post content to 300px + gradient overlay if paywalled.
 3. Shows an "Unlock for $X →" button linking to `/read?slug=<slug>`.
 
-Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks to `POST /api/ghost/sync`, which upserts into `articles` and assigns base price `50000` ($0.05). The webhook secret is validated via HMAC (`GHOST_WEBHOOK_SECRET`). Creator onboarding happens at `/ghost-onboard`.
+Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks directly to EC2's `POST /agent/ghost/webhook?site=<creatorId>` (validated against that creator's own `ghost_webhook_secret` DB column, not a global env var); `web/app/api/ghost/sync/route.ts` is a compat proxy for old webhook URLs only. Upserts into `articles` and, live, deploys/registers the post's `ContentVault`. Creator onboarding happens at `/ghost-onboard`.
 
 ---
 
@@ -216,7 +216,7 @@ These were open in `cresc-architecture.md §12`; they are now decided:
 
 - **Auth provider:** wallet-based (RainbowKit/wagmi on Arc Testnet). No Supabase Auth or Clerk. `user_id` = wallet address.
 - **Ghost gate mechanism:** theme snippet (`web/public/cresc-ghost.js`) injected via Ghost Code Injection.
-- **`unlock_token` exchange:** HMAC-signed string `${expiry}:${slug}:${readerId}:${sig}`, 1-hour TTL, verified server-side by the x402 route.
+- **`unlock_token` exchange:** HMAC-signed string `${expiry}:${site}:${slug}:${readerId}:${sig}`, 1-hour TTL, verified server-side by the x402 route.
 - **Rolling-median window:** 7 days (hardcoded in `agents/src/workers/watcher.ts`).
 
 ---
@@ -227,6 +227,5 @@ These were open in `cresc-architecture.md §12`; they are now decided:
 - Money helpers in `web/lib/money.ts` and `agents/src/money.ts` (kept in sync). Never inline atomic↔display or erc20↔native conversions.
 - The two `config.ts` files (`web/lib/config.ts`, `agents/src/config.ts`) are the single source of truth for env var names. Comments in both files say "keep-in-sync."
 - HMAC helpers: `web/lib/hmac.ts` (builds + verifies), `agents/src/middleware/hmac.ts` (Express middleware). Both use the same algorithm — changes to one require a matching change in the other.
-- Env var `ENTITY_SECRET` (legacy) and `CIRCLE_ENTITY_SECRET` are both accepted by `agents/src/config.ts`; prefer `CIRCLE_ENTITY_SECRET`.
 - Log every agent decision (gate scores + outcome) — it is both observability and traction evidence.
 - After changing any signing path, re-verify the four startup assertions still hold.

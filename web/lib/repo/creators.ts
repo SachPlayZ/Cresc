@@ -39,9 +39,12 @@ export async function getCreatorByWallet(db: SupabaseClient, walletAddress: stri
   return data ?? null;
 }
 
+// Always inserts a fresh row. wallet_address is nullable (partial-unique index, see
+// migration 20260706120000) — pass null, not '', when the wallet isn't known yet, so
+// concurrent not-yet-onboarded creators never collide on the same placeholder value.
 export async function createCreator(
   db: SupabaseClient,
-  input: { display_name: string; wallet_address: string }
+  input: { display_name: string; wallet_address: string | null }
 ): Promise<Creator> {
   const { data, error } = await db.from('creators').insert(input).select().single();
   if (error) throw error;
@@ -60,17 +63,4 @@ export async function updateGhostConnection(
     ghost_webhook_secret: data.ghost_webhook_secret,
   }).eq('id', creatorId);
   if (error) throw error;
-}
-
-export async function upsertCreator(
-  db: SupabaseClient,
-  input: { display_name: string; wallet_address: string }
-): Promise<Creator> {
-  const { data, error } = await db
-    .from('creators')
-    .upsert(input, { onConflict: 'wallet_address' })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
 }

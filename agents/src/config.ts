@@ -10,6 +10,9 @@ export const GATEWAY_MINTER_ADDRESS = '0x0022222ABE238Cc2C7Bb1f21003F0a260052475
 export const GATEWAY_FACILITATOR_URL = 'https://gateway-api-testnet.circle.com' as const;
 export const ARC_EXPLORER_BASE = 'https://testnet.arcscan.app' as const;
 export const USDC_ERC20_DECIMALS = 6 as const;
+export const CONTENT_FACTORY_ADDRESS: string = getEnv('CONTENT_FACTORY_ADDRESS') ?? '';
+export const CONTENT_TUNER_PRIVATE_KEY: string = getEnv('CONTENT_TUNER_PRIVATE_KEY') ?? '';
+export const CONTENT_TUNER_ADDRESS: string = getEnv('CONTENT_TUNER_ADDRESS') ?? '';
 
 function getEnv(key: string): string | undefined {
   return process.env[key];
@@ -34,14 +37,9 @@ export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv('SUPABASE_SERVICE_ROLE_K
 
 export const ARC_RPC_URL: string = getEnv('ARC_RPC_URL') ?? '';
 
-// The ONE raw key in the system. Lives only on EC2. SELLER_PRIVATE_KEY stays empty (Circle wallet).
+// Raw operator keys live only on EC2. SELLER_PRIVATE_KEY stays empty (creator has no app-held raw key).
 export const BUYER_PRIVATE_KEY: string = getEnv('BUYER_PRIVATE_KEY') ?? '';
 export const isPaymentMockMode: boolean = !ARC_RPC_URL || !BUYER_PRIVATE_KEY;
-
-// Circle developer-controlled wallets (creator payouts)
-export const CIRCLE_API_KEY: string = getEnv('CIRCLE_API_KEY') ?? '';
-export const CIRCLE_ENTITY_SECRET: string = getEnv('CIRCLE_ENTITY_SECRET') ?? getEnv('ENTITY_SECRET') ?? '';
-export const CIRCLE_WALLET_SET_ID: string = getEnv('CIRCLE_WALLET_SET_ID') ?? '';
 
 // Groq via OpenAI-compatible API.
 export const GROQ_API_KEY: string = getEnv('GROQ_API_KEY') ?? '';
@@ -92,5 +90,10 @@ export function validateAgentConfig(): void {
   } else {
     requireEnv('ARC_RPC_URL');
     requireEnv('BUYER_PRIVATE_KEY');
+    requireEnv('CONTENT_FACTORY_ADDRESS');
+    requireEnv('CONTENT_TUNER_PRIVATE_KEY');
+  }
+  if (isPaymentMockMode && (!CONTENT_FACTORY_ADDRESS || !CONTENT_TUNER_PRIVATE_KEY)) {
+    console.warn('[config] payment mock mode — content contract txs use deterministic mock addresses');
   }
 }

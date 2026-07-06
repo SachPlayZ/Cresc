@@ -40,20 +40,24 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const body = await req.json() as { reader_id?: string; request_id?: string };
+  const body = await req.json() as { reader_id?: string; request_id?: string; site?: string };
   const readerId = body.reader_id;
+  const site = body.site;
 
-  if (!readerId) {
-    return NextResponse.json({ error: 'reader_id required' }, { status: 400 });
+  if (!readerId || !site) {
+    return NextResponse.json({ error: 'reader_id and site required' }, { status: 400 });
   }
 
   const db = createServerClient();
-  const article = await getArticleBySlug(db, slug);
+  const article = await getArticleBySlug(db, slug, site);
   if (!article) {
     return NextResponse.json({ error: 'article not found' }, { status: 404 });
   }
 
-  const creatorWallet = article.creators?.eoa_address ?? '';
+  const contentContract = article.content_contract ?? '';
+  if (!contentContract) {
+    return NextResponse.json({ error: 'content contract not deployed' }, { status: 503 });
+  }
 
   // Request ID for idempotency (CLAUDE.md invariant §9)
   const requestId = body.request_id ?? crypto.randomUUID();
@@ -63,9 +67,10 @@ export async function POST(
     request_id: requestId,
     article: {
       slug,
-      unlock_url: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/api/x402/${encodeURIComponent(slug)}?r=${encodeURIComponent(readerId)}&rid=${encodeURIComponent(requestId)}`,
+      creator_id: site,
+      unlock_url: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/api/x402/${encodeURIComponent(slug)}?site=${encodeURIComponent(site)}&r=${encodeURIComponent(readerId)}&rid=${encodeURIComponent(requestId)}`,
       price_atomic: String(article.current_price_atomic),
-      creator_wallet: creatorWallet,
+      content_contract: contentContract,
       title: article.title,
       excerpt: article.excerpt,
       topics: article.topics,

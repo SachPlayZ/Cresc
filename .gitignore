@@ -17,6 +17,10 @@ dist/
 *.log
 npm-debug.log*
 
+# Foundry
+cache/
+contracts/out/
+
 # Supabase local
 agents/supabase/.branches
 agents/supabase/.temp

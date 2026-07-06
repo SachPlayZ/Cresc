@@ -6,9 +6,10 @@ import { useEffect, useMemo, useRef } from "react";
 interface GhostReaderProps {
   html: string;
   articleSlug?: string;
+  site?: string;
 }
 
-export function GhostReader({ html, articleSlug }: GhostReaderProps) {
+export function GhostReader({ html, articleSlug, site }: GhostReaderProps) {
   const sentViewRef = useRef(false);
 
   const safeHtml = useMemo(() => {
@@ -49,6 +50,7 @@ export function GhostReader({ html, articleSlug }: GhostReaderProps) {
       const payload = JSON.stringify({
         reader_id: readerId,
         article_slug: articleSlug,
+        site,
         event_type: "view",
         dwell_ms: Math.max(0, Date.now() - startedAt),
       });
@@ -83,7 +85,7 @@ export function GhostReader({ html, articleSlug }: GhostReaderProps) {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       sendView();
     };
-  }, [articleSlug]);
+  }, [articleSlug, site]);
 
   return (
     <div className="max-w-2xl mx-auto px-6">

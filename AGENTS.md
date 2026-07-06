@@ -2,11 +2,11 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
-Pay-per-article monetization for Ghost, settled in USDC on **Arc** via Circle Nanopayments (Gateway + x402). Next.js frontend on **Vercel**, always-on agents on **EC2**, Circle Gateway for settlement.
+Pay-per-article monetization for Ghost, settled in USDC on **Arc** via Circle Nanopayments (Gateway + x402). Next.js frontend on **Vercel**, always-on agents on **EC2**, per-content contracts on Arc.
 
 The full design lives in `cresc-architecture.md` — when this file and the architecture doc disagree, the architecture doc wins; flag the conflict instead of guessing.
 
-> **README.md is stale.** It describes an old DB-queue architecture ("No HTTP server — DB-only"). The actual architecture is an HTTP Express server on EC2 with HMAC-authenticated calls from Vercel, as documented below.
+> **README.md is stale.** The actual architecture is an HTTP Express server on EC2 with HMAC-authenticated calls from Vercel, plus Arc content contracts deployed by a factory.
 
 ---
 
@@ -37,11 +37,13 @@ CI runs `npm run typecheck` in `agents/` on every push to main before deploying 
 
 These cause silent, expensive bugs if violated. Treat them as hard constraints, not suggestions.
 
-1. **The x402 buyer is a raw-key EOA. Forced by `ecrecover`.** Gateway verifies payment signatures offchain with `ecrecover`, which cannot recover an SCA's EIP-1271 signature, so SCA wallets are rejected for nanopayments. There is no Circle-Wallets-SDK substitute for the buyer pay path. `BUYER_PRIVATE_KEY` is the **only** live raw key in the system, and it lives **only on EC2**.
+1. **The x402 buyer is a raw-key EOA. Forced by `ecrecover`.** Gateway verifies payment signatures offchain with `ecrecover`, which cannot recover an SCA's EIP-1271 signature, so SCA wallets are rejected for nanopayments. There is no Circle-Wallets-SDK substitute for the buyer pay path. `BUYER_PRIVATE_KEY` lives **only on EC2** and is used only for x402/Gateway payments.
 
-2. **The creator/seller is a Circle dev-controlled wallet — no raw key.** The seller never signs an x402 authorization; on the read path it only *verifies and settles* via the facilitator API (keyless). A creator signs exactly once: **withdrawal**, via Circle SDK `signTypedData` on a Gateway burn intent. `SELLER_PRIVATE_KEY` staying **empty is correct** — do not "fix" it.
+2. **Creators do not need seller raw keys.** The read path verifies/settles through the facilitator API and pays the content contract. Creator wallets receive withdrawals from content contracts; `SELLER_PRIVATE_KEY` staying **empty is correct** — do not "fix" it.
 
-3. **There is no "EIP-719."** Buyer-pay = **EIP-3009** (transfer-with-authorization). Gateway transfer/withdraw = **EIP-712 `BurnIntent`** against domain `{ name: "GatewayWallet", version: "1" }`. The "Hits X402" step is a `402 Payment Required` carrying a base64 `PAYMENT-REQUIRED` header.
+2a. **The content tuner is an EC2-only operational signer.** `CONTENT_TUNER_PRIVATE_KEY` deploys content contracts, tunes prices, and executes payout-operator withdrawals. Treat it as a hot admin key: EC2 only, never Vercel/client, never reused as the buyer key.
+
+3. **There is no "EIP-719."** Buyer-pay = **EIP-3009** (transfer-with-authorization). Content withdrawals are ERC-20 transfers from the content contract. The "Hits X402" step is a `402 Payment Required` carrying a base64 `PAYMENT-REQUIRED` header.
 
 4. **Money is atomic 6dp integers, end to end.** Every money column is `bigint` (or `numeric(78,0)`) storing atomic USDC. `$0.05 = 50000`. Never a float, never dollars in storage. Convert dollars→atomic only at ingest (`Math.round(dollars * 1e6)`) and atomic→display only at the UI edge. The reference repo's `payment_events.amount_usdc` is `text` — keep it `text` to match the schema, but treat it as an atomic-integer string.
 
@@ -51,33 +53,44 @@ These cause silent, expensive bugs if violated. Treat them as hard constraints, 
 
 7. **Single writer for the buyer nonce.** Run exactly **one** Reader Agent instance against the shared buyer key. Two instances signing from the same EOA collide on nonces. To scale, shard readers across keys or serialize signing — never naively run two copies.
 
-8. **`payment_events` is append-only.** RLS: public read, service-role insert. It is the transparent dashboard's source of truth. **It is written by the Vercel `/api/x402/[slug]` route at settlement time — not by the EC2 agent.**
+8. **`payment_events` is append-only.** RLS: public read, service-role insert. It mirrors settlements for dashboards/idempotency. **It is written by the Vercel `/api/x402/[slug]` route at settlement time — not by the EC2 agent.** Contract balances are the payout source of truth.
 
-9. **Idempotency.** Key each unlock attempt by `(reader_id, article_slug, request_id)`; check `payment_events` before signing; a settled row means already-paid. A mid-payment crash must not double-pay.
+9. **Idempotency.** Key each unlock attempt by `(reader_id, content_contract, request_id)`; check `payment_events` before signing; a settled row means already-paid. A mid-payment crash must not double-pay.
+
+10. **Every monetized post has a content contract.** Ghost webhook → EC2 agent → `ContentFactory.createContent(...)`. The content contract stores metadata + current price and receives Gateway USDC payments.
+
+11. **Pricing source of truth is onchain.** The agent may compute demand offchain, but price changes happen through `ContentVault.tunePrice(...)`. Postgres price fields are cache/UI only.
 
 ---
 
 ## Architecture in one screen
 
-Three planes, two deploy targets, one settlement rail.
+Three planes, two deploy targets, one settlement rail, one content contract per post.
 
-- **Creator (writer):** Circle dev-controlled wallet, one per creator. Signs via Circle SDK (`signTypedData`) — payout only. UI on Vercel, payout on EC2.
+- **Creator (writer):** Circle wallet, one per creator. Owns content contracts and withdraws their balances.
 - **Reader (+ Reader Agent):** one shared raw-key EOA + per-reader budget rows in Postgres. Signs via `GatewayClient({ privateKey })`. Always-on, EC2.
-- **Settlement:** Circle Gateway on Arc batches EIP-3009 authorizations into one onchain USDC settlement.
+- **Content contracts:** one `ContentVault` per Ghost post, deployed by `ContentFactory`. Stores metadata, price, owner, and revenue.
+- **Settlement:** Circle Gateway on Arc batches EIP-3009 authorizations and credits each content contract's USDC balance.
 
-**Vercel** (stateless, no hot keys): creator dashboard, Ghost content gate, x402 unlock route (`withGateway` → facilitator `verify`/`settle`), Ghost webhook intake + HMAC internal API.
+**Vercel** (stateless, no hot keys): creator dashboard, Ghost content gate, x402 unlock route (`withGateway` → facilitator `verify`/`settle`), HMAC internal API.
 
-**EC2** (always-on, holds the one raw key + Circle entity secret): Reader Agent HTTP service + redeposit loop, Watcher worker (hourly repricing), Creator Audit Agent worker, both signing paths (buyer x402 raw key; creator withdrawal Circle SDK). Systemd with `Restart=always`.
+**EC2** (always-on, holds the buyer raw key + operational signing access): Ghost webhook receiver, Reader Agent HTTP service + redeposit loop, Pricing Agent (`tunePrice` txs), Creator Audit Agent, content deployment and withdrawal orchestration. Systemd with `Restart=always`.
 
 ### Payment flow (critical path)
 
 ```
+Ghost post published
+  → POST /agent/ghost/webhook (EC2)
+  → agent calls ContentFactory.createContent(...)
+  → ContentVault deployed; Postgres indexes content_contract
+
 Reader → POST /api/unlock/:slug (Vercel)
   → HMAC-signed POST /agent/evaluate-and-pay (EC2)
   → 4 gates pass → agent calls GatewayClient.pay(unlock_url)
   → GET /api/x402/:slug — 402, agent signs EIP-3009, retries with Payment-Signature
-  → Vercel: BatchFacilitatorClient.verify() + .settle()
+  → Vercel: BatchFacilitatorClient.verify() + .settle() with payTo=content_contract
   → payment_events row written (by /api/x402/[slug] route, NOT the agent)
+  → Gateway settlement credits the content contract
   → unlock_token returned to agent → agent returns it to Vercel → content served
 ```
 
@@ -99,8 +112,9 @@ HTTP, not a queue. Reader Agent runs Express; Vercel calls synchronously. No pub
 
 **Endpoints (EC2, called by Vercel):**
 - `POST /agent/evaluate-and-pay` → `{ decision: paid|declined|error, gates, payment?, unlock_token?, reason?, error? }`. `paid`/`declined` both return `200`; `error` returns `502`.
-- `POST /agent/tip` → budget-gate only, second `pay()` to creator EOA.
-- `POST /agent/withdraw` → Circle burn-intent withdrawal (the one creator-signing path; stays on EC2 for the entity secret).
+- `POST /agent/tip` → budget-gate only, second `pay()` to the content contract.
+- `POST /agent/ghost/webhook` → validate Ghost webhook, deploy/index content contract.
+- `POST /agent/withdraw-content` → withdraw Arc USDC from a content contract to the creator wallet.
 - `GET /healthz` → Gateway balance, last-payment timestamp, LLM reachability. **Not HMAC-protected** — must be reachable by external monitors.
 
 ---
@@ -113,20 +127,20 @@ HTTP, not a queue. Reader Agent runs Express; Vercel calls synchronously. No pub
 - **Decision rule (deterministic, after LLM):** pay IFF `budget_ok AND quality ≥ QUALITY_MIN (0.5) AND interest ≥ INTEREST_MIN (0.5) AND confidence ≥ CONFIDENCE_MIN (80)`. Thresholds env-configurable.
 - **Mock mode:** if `GROQ_API_KEY` unset, return deterministic stubs (`quality 0.7, interest 0.7, confidence 85`) so the pay loop is testable without Groq.
 
-**Watcher — hourly per active article, on AUDITED counts only:**
+**Pricing Agent — per active content contract, on AUDITED counts only:**
 ```
 demand = W_VIEWS*norm(views_24h) + W_DWELL*norm(avg_dwell_24h) + W_TIPS*norm(tips_24h)
 target = round(base_price_atomic * (0.5 + demand))
 new_price = clamp(target, PRICE_MIN_ATOMIC, PRICE_MAX_ATOMIC)
 new_price = clamp(new_price, prev*0.8, prev*1.2)   # ±20%/hr volatility damp
 ```
-Normalization uses 7-day rolling medians across all articles. Write `articles.current_price_atomic`; append `price_history` with the three normalized inputs as `reason`. `current_price` is what the seller route reads for `PAYMENT-REQUIRED`.
+Normalization uses 7-day rolling medians across all articles. Call `ContentVault.tunePrice(new_price, reasonHash)`; append `price_history` with tx hash/reason. `ContentVault.priceAtomic()` is what the seller route reads for `PAYMENT-REQUIRED`.
 
-**Creator Audit Agent — runs before Watcher consumes telemetry:**
-1. Deterministic pre-filter: drop view if `dwell_ms < 1500`; same `reader_id` on same `article_id` > N/hr (default 3); self-tip from creator wallet; flag per-IP/reader z-score spikes.
-2. LLM judgment for statistical outliers: send access *pattern* to Groq, get `{ authentic_fraction: 0-1, reason }`. Watcher scales raw counts by `authentic_fraction`.
+**Creator Audit Agent — runs before Pricing Agent consumes telemetry:**
+1. Deterministic pre-filter: drop view if `dwell_ms < 1500`; same `reader_id` on same `content_contract` > N/hr (default 3); self-tip from creator wallet; flag per-IP/reader z-score spikes.
+2. LLM judgment for statistical outliers: send access *pattern* to Groq, get `{ authentic_fraction: 0-1, reason }`. Pricing Agent scales raw counts by `authentic_fraction`.
 
-Output is **audited counts** (`telemetry_audited`) — the Watcher never reads raw counts.
+Output is **audited counts** (`telemetry_audited`) — the Pricing Agent never reads raw counts.
 
 ---
 
@@ -134,14 +148,15 @@ Output is **audited counts** (`telemetry_audited`) — the Watcher never reads r
 
 Migrations live in `agents/supabase/migrations/` — apply with `npx supabase db push` from `agents/`.
 
-- `creators` (user_id, circle_wallet_id, eoa_address, ghost_url, ghost_key_enc)
+- `creators` (user_id, circle_wallet_id, wallet_address, ghost_url, ghost_key_enc)
 - `readers` (user_id, daily_budget_atomic bigint, session_budget_atomic bigint, spent_today_atomic bigint, spent_session_atomic bigint, session_reset_at)
-- `articles` (slug, creator_id, base_price_atomic bigint, current_price_atomic bigint, ghost_post_id, topics text[])
-- `telemetry` (article_id, reader_id, event_type, dwell_ms, ip_hash, ts)
-- `telemetry_audited` (article_slug, window_start, views, avg_dwell_ms, tips_atomic, authentic_fraction) — Watcher reads this
-- `payment_events` (endpoint, payer, amount_usdc text [atomic string], network, gateway_tx, reader_id, article_slug, request_id, raw) — append-only, RLS
-- `withdrawals` (amount_atomic bigint, destination_chain, destination_address, status, tx_hash)
-- `price_history` (article_slug, price_atomic bigint, reason jsonb, ts)
+- `articles` (slug, creator_id, ghost_post_id, content_id, content_contract, metadata_uri, metadata_hash, last_seen_price_atomic, factory_tx, active)
+- `telemetry` (content_contract, reader_id, event_type, dwell_ms, ip_hash, ts)
+- `telemetry_audited` (content_contract, window_start, views, avg_dwell_ms, tips_atomic, authentic_fraction) — Pricing Agent reads this
+- `payment_events` (endpoint, payer, pay_to, amount_usdc text [atomic string], network, gateway_tx, reader_id, content_contract, request_id, raw) — append-only, RLS
+- `withdrawals` (content_contract, amount_atomic, destination_chain, destination_address, status, tx_hash)
+- `price_history` (content_contract, old_price_atomic, new_price_atomic, reason_hash, tune_tx, ts)
+- `contract_deployments` (content_id, content_contract, factory, tx_hash, status, raw)
 
 Stored procedures: `record_reader_spend(p_user_id, p_amount)`, `reset_daily_budgets()` (called at midnight UTC by the agent).
 
@@ -151,8 +166,11 @@ Stored procedures: `record_reader_spend(p_user_id, p_amount)`, `reset_daily_budg
 
 - Frontend + x402 seller: Next.js on Vercel.
 - Agents: Node/TS on EC2, systemd (`Restart=always`, `MemoryMax=500M`).
+- Contracts: Solidity `ContentFactory` + per-post `ContentVault` contracts on Arc.
 - Buyer signing (x402): `viem` + `@circle-fin/x402-batching` (raw `BUYER_PRIVATE_KEY`).
-- Creator wallets + payout: `@circle-fin/developer-controlled-wallets` (`signTypedData` + `createContractExecutionTransaction`).
+- Content contract ops: `viem` wallet client with EC2-only `CONTENT_TUNER_PRIVATE_KEY`.
+- Contract deployment/tuning: `viem` or Circle transaction APIs.
+- Creator payout: withdraw from content contract; use CCTP V2/Gateway for cross-chain after Arc withdrawal.
 - Groq: OpenAI-compatible (`GROQ_BASE_URL`/`GROQ_MODEL`). No key → mock mode.
 - State: Supabase Postgres. Blobs: S3. Cross-chain payout: **CCTP V2** (V1 is legacy).
 
@@ -173,7 +191,7 @@ RPC (keyed, SECRET):    ARC_RPC_URL — server-side only
 x402 payment requirements `extra` block:
 ```
 scheme "exact", network ARC_CAIP2, asset USDC, amount (atomic 6dp),
-payTo <creator EOA>, maxTimeoutSeconds 345600,
+payTo <content contract>, maxTimeoutSeconds 345600,
 extra: { name: "GatewayWalletBatched", version: "1", verifyingContract: GATEWAY_WALLET_ADDRESS }
 ```
 
@@ -183,10 +201,10 @@ extra: { name: "GatewayWalletBatched", version: "1", verifyingContract: GATEWAY_
 
 1. `USDC.decimals() === 6`.
 2. chain id `5042002`.
-3. On EC2: `BUYER_PRIVATE_KEY` present **and** `SELLER_PRIVATE_KEY` absent.
+3. On EC2 live mode: `BUYER_PRIVATE_KEY`, `CONTENT_TUNER_PRIVATE_KEY`, and `CONTENT_FACTORY_ADDRESS` present; `SELLER_PRIVATE_KEY` absent.
 4. `INTERNAL_HMAC_SECRET` present on both Vercel and EC2.
 
-Assertions 1–2 are skipped in mock mode (when `GROQ_API_KEY` is unset) but should still run in production. `CIRCLE_ENTITY_SECRET` should also be asserted present on EC2 (required for withdrawals). The config reads it from either `CIRCLE_ENTITY_SECRET` or the legacy `ENTITY_SECRET` env var.
+Assertions 1–2 are skipped in mock mode (when `GROQ_API_KEY` is unset) but should still run in production. `CIRCLE_ENTITY_SECRET` should also be asserted present on EC2 when using Circle-controlled operational wallets. The config reads it from either `CIRCLE_ENTITY_SECRET` or the legacy `ENTITY_SECRET` env var.
 
 ---
 
@@ -197,13 +215,13 @@ Assertions 1–2 are skipped in mock mode (when `GROQ_API_KEY` is unset) but sho
 2. Clips post content to 300px + gradient overlay if paywalled.
 3. Shows an "Unlock for $X →" button linking to `/read?slug=<slug>`.
 
-Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks to `POST /api/ghost/sync`, which upserts into `articles` and assigns base price `50000` ($0.05). The webhook secret is validated via HMAC (`GHOST_WEBHOOK_SECRET`). Creator onboarding happens at `/ghost-onboard`.
+Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks to `POST /agent/ghost/webhook` on EC2. The agent validates `GHOST_WEBHOOK_SECRET`, creates/updates metadata, calls `ContentFactory.createContent(...)` for new posts, and stores `content_contract` in Postgres. Creator onboarding happens at `/ghost-onboard`.
 
 ---
 
 ## EC2 production hygiene
 
-- State lives in Postgres/Gateway, never process memory — a restart loses nothing. Only in-memory state is the redeposit timer; on boot, re-read Gateway balance and resume the loop.
+- State lives in Postgres/Gateway/contracts, never process memory — a restart loses nothing. Only in-memory state is the redeposit timer; on boot, re-read Gateway balance and resume the loop.
 - Redeposit loop self-heals (~30s interval, top up below threshold), survives restarts, tolerates in-flight funder transfers (nonce-retry).
 - Graceful shutdown: trap SIGTERM, stop accepting new `evaluate-and-pay`, drain in-flight payments, then close — prevents a half-signed authorization on deploy.
 - Single GatewayClient instance must be shared across all routes — two instances on the same private key cause nonce collisions.
@@ -217,7 +235,7 @@ These were open in `cresc-architecture.md §12`; they are now decided:
 - **Auth provider:** Circle User Controlled Wallets on Arc Testnet. No external wallet connector, Supabase Auth, or Clerk. `user_id` = UCW wallet address.
 - **Ghost gate mechanism:** theme snippet (`web/public/cresc-ghost.js`) injected via Ghost Code Injection.
 - **`unlock_token` exchange:** HMAC-signed string `${expiry}:${slug}:${readerId}:${sig}`, 1-hour TTL, verified server-side by the x402 route.
-- **Rolling-median window:** 7 days (hardcoded in `agents/src/workers/watcher.ts`).
+- **Rolling-median window:** 7 days for Pricing Agent demand normalization.
 
 ---
 

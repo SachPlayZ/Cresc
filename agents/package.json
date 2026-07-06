@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.mts",
     "demo": "tsx scripts/demo-harness.mts",
-    "generate-wallets": "tsx scripts/generate-wallets.mts"
+    "generate-wallets": "tsx scripts/generate-wallets.mts",
+    "deposit-gateway": "tsx scripts/deposit-gateway.mts",
+    "test-gateway": "tsx scripts/test-gateway.mts",
+    "smoke:staging": "tsx scripts/staging-smoke.mts"
   },
   "dependencies": {
     "@circle-fin/developer-controlled-wallets": "^10.6.0",

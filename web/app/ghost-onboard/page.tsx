@@ -33,6 +33,7 @@ export default function GhostOnboardPage() {
   const [walletStep, setWalletStep] = useState<WalletStep>('idle');
   const [name, setName] = useState("");
   const [creatorId, setCreatorId] = useState<string | null>(null);
+  const [onboardingToken, setOnboardingToken] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [instanceUrl, setInstanceUrl] = useState("");
   const [adminKey, setAdminKey] = useState("");
@@ -155,7 +156,7 @@ export default function GhostOnboardPage() {
       const res = await fetch('/api/ucw/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userToken, creator_id: creatorId }),
+        body: JSON.stringify({ userToken, creator_id: creatorId, onboarding_token: onboardingToken }),
       });
       const data = await res.json() as {
         challengeId?: string;
@@ -189,7 +190,8 @@ export default function GhostOnboardPage() {
   async function fetchWalletAddress() {
     if (!userToken || !creatorId) return;
     try {
-      const url = `/api/ucw/wallet?userToken=${encodeURIComponent(userToken)}&creator_id=${encodeURIComponent(creatorId)}`;
+      const url = `/api/ucw/wallet?userToken=${encodeURIComponent(userToken)}&creator_id=${encodeURIComponent(creatorId)}` +
+        (onboardingToken ? `&onboarding_token=${encodeURIComponent(onboardingToken)}` : '');
       const res = await fetch(url);
       const data = await res.json() as { address?: string; error?: string };
       if (!res.ok || data.error) { setError(data.error ?? 'Wallet fetch failed'); setWalletStep('challenge'); return; }
@@ -211,10 +213,12 @@ export default function GhostOnboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ display_name: name.trim() }),
       });
-      const data = await res.json() as { creator?: { id: string }; error?: string };
+      const data = await res.json() as { creator?: { id: string }; onboarding_token?: string; error?: string };
       if (!res.ok || !data.creator) { setError(data.error ?? "Failed to create account."); return; }
       setCreatorId(data.creator.id);
+      setOnboardingToken(data.onboarding_token ?? null);
       localStorage.setItem("cresc_creator_id", data.creator.id);
+      if (data.onboarding_token) localStorage.setItem("cresc_onboarding_token", data.onboarding_token);
       setStep(2);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
@@ -235,7 +239,7 @@ export default function GhostOnboardPage() {
       const ghostRes = await fetch("/api/ghost/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instanceUrl: instanceUrl.trim(), adminKey: adminKey.trim(), creatorId }),
+        body: JSON.stringify({ instanceUrl: instanceUrl.trim(), adminKey: adminKey.trim(), creatorId, userToken }),
       });
       const ghostData = await ghostRes.json() as ConnectResult & { error?: string };
       if (!ghostRes.ok || ghostData.error) { setError(ghostData.error ?? "Ghost connection failed."); return; }

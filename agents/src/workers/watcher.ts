@@ -1,4 +1,4 @@
-// src/workers/watcher.ts — Hourly Watcher: reads audited telemetry, recomputes article prices.
+// src/workers/watcher.ts — Pricing Agent: reads audited telemetry, tunes content-contract prices.
 // Deterministic formula (CLAUDE.md §Agent decision logic / Watcher):
 //   demand = W_VIEWS*norm(views_24h) + W_DWELL*norm(avg_dwell_24h) + W_TIPS*norm(tips_24h)
 //   target = round(base_price_atomic * (0.5 + demand))
@@ -6,6 +6,7 @@
 //   new_price = clamp(new_price, prev*0.8, prev*1.2)  -- ±20%/hr volatility damp
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { keccak256, toHex } from 'viem';
 import {
   PRICE_MIN_ATOMIC,
   PRICE_MAX_ATOMIC,
@@ -13,6 +14,12 @@ import {
   W_DWELL,
   W_TIPS,
 } from '../config.js';
+import { tuneContentPrice } from './content-contracts.js';
+
+// Must match ContentVault.PRICE_MAX_ATOMIC (contracts/src/ContentVault.sol) — the contract
+// ceiling always wins. If PRICE_MAX_ATOMIC env is set above this, tunePrice would revert on
+// every call.
+const CONTRACT_PRICE_MAX_ATOMIC = 1_000_000;
 
 type AuditedRow = {
   article_slug: string;
@@ -24,6 +31,7 @@ type AuditedRow = {
 
 type ArticleRow = {
   slug: string;
+  content_contract: string | null;
   base_price_atomic: string | number;
   current_price_atomic: string | number;
 };
@@ -91,12 +99,27 @@ async function repriceArticle(
   const basePriceAtomic = Number(BigInt(String(article.base_price_atomic)));
   const prev = Number(BigInt(String(article.current_price_atomic)));
 
+  const effectiveMaxAtomic = Math.min(PRICE_MAX_ATOMIC, CONTRACT_PRICE_MAX_ATOMIC);
   let target = Math.round(basePriceAtomic * (0.5 + demand));
-  target = Math.min(Math.max(target, PRICE_MIN_ATOMIC), PRICE_MAX_ATOMIC);
+  target = Math.min(Math.max(target, PRICE_MIN_ATOMIC), effectiveMaxAtomic);
 
   const newPrice = Math.min(Math.max(target, Math.round(prev * 0.8)), Math.round(prev * 1.2));
 
   if (newPrice === prev) return; // no change
+
+  let tuneTx: string | null = null;
+  const reason = { views_norm: viewsNorm, dwell_norm: dwellNorm, tips_norm: tipsNorm, demand };
+  const reasonHash = keccak256(toHex(JSON.stringify(reason)));
+  if (article.content_contract) {
+    try {
+      tuneTx = await tuneContentPrice(article.content_contract, BigInt(newPrice), reasonHash);
+    } catch (err) {
+      // Don't let an onchain failure (RPC blip, revert) block the DB update below —
+      // the x402 route reads price onchain directly, so a stuck DB write here would
+      // only desync the watcher's own normalization inputs, not reader-facing price.
+      console.error(`[pricing] tuneContentPrice failed for ${article.slug} (DB still updated):`, err);
+    }
+  }
 
   await db
     .from('articles')
@@ -105,24 +128,30 @@ async function repriceArticle(
 
   await db.from('price_history').insert({
     article_slug: article.slug,
+    content_contract: article.content_contract,
+    old_price_atomic: prev,
+    new_price_atomic: newPrice,
     price_atomic: newPrice,
-    reason: { views_norm: viewsNorm, dwell_norm: dwellNorm, tips_norm: tipsNorm, demand },
+    reason,
+    reason_hash: reasonHash,
+    tune_tx: tuneTx,
   });
 
   console.log(
-    `[watcher] ${article.slug}: ${prev} → ${newPrice} (demand=${demand.toFixed(3)})`
+	    `[pricing] ${article.slug}: ${prev} → ${newPrice} tx=${tuneTx ?? 'mock/cache'} (demand=${demand.toFixed(3)})`
   );
 }
 
 export async function runWatcher(db: SupabaseClient): Promise<void> {
-  console.log('[watcher] starting hourly reprice run...');
+  console.log('[pricing] starting price tune run...');
 
   const { data: articles, error } = await db
     .from('articles')
-    .select('slug, base_price_atomic, current_price_atomic');
+    .select('slug, content_contract, base_price_atomic, current_price_atomic')
+    .eq('active', true);
 
   if (error || !articles || articles.length === 0) {
-    console.log('[watcher] no articles to reprice');
+    console.log('[pricing] no articles to reprice');
     return;
   }
 
@@ -133,17 +162,17 @@ export async function runWatcher(db: SupabaseClient): Promise<void> {
     try {
       await repriceArticle(db, article as ArticleRow, medians);
     } catch (err) {
-      console.error(`[watcher] reprice failed for ${article.slug}:`, err);
+      console.error(`[pricing] tune failed for ${article.slug}:`, err);
     }
   }
 
-  console.log(`[watcher] done — repriced ${articles.length} article(s)`);
+  console.log(`[pricing] done — processed ${articles.length} article(s)`);
 }
 
 export function startWatcher(db: SupabaseClient, intervalMs: number): void {
-  console.log(`[watcher] starting — interval ${Math.round(intervalMs / 60000)}min`);
-  runWatcher(db).catch((err) => console.error('[watcher] initial run error:', err));
+  console.log(`[pricing] starting — interval ${Math.round(intervalMs / 60000)}min`);
+  runWatcher(db).catch((err) => console.error('[pricing] initial run error:', err));
   setInterval(() => {
-    runWatcher(db).catch((err) => console.error('[watcher] interval error:', err));
+    runWatcher(db).catch((err) => console.error('[pricing] interval error:', err));
   }, intervalMs);
 }

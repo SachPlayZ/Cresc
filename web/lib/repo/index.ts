@@ -2,7 +2,7 @@
 
 export type {
   Article, Reader, Telemetry, PaymentEvent, PriceHistory, Withdrawal,
-  Creator, Piece,
+  Creator,
 } from './types';
 
 // New architecture repos
@@ -14,11 +14,4 @@ export {
 export { getReader, ensureReader, recordReaderSpend } from './readers';
 
 // Creator (used by ghost connect/sync and dashboard)
-export { getCreator, getCreatorByWallet, createCreator, upsertCreator, updateGhostConnection } from './creators';
-
-// Legacy pieces repo (kept for backward compat with existing dashboard)
-export {
-  getPiece, getStandingPrice, getStandingPriceWithCreator,
-  listPiecesByCreator, listListedPieces, createPiece, updatePiecePrice, updatePieceStatus,
-  upsertGhostPiece,
-} from './pieces';
+export { getCreator, getCreatorByWallet, createCreator, updateGhostConnection } from './creators';

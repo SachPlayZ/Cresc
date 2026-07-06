@@ -203,7 +203,7 @@ export default function GhostDocsClient() {
 
           <div className="space-y-2 mt-4">
             <label className="text-xs font-mono text-muted-foreground uppercase tracking-wider block font-mono">Target URL</label>
-            <CodeBlock value={`${appUrl}/api/ghost/sync?site=YOUR_CREATOR_ID`} />
+            <CodeBlock value={`${process.env.NEXT_PUBLIC_EC2_AGENT_BASE_URL ?? "https://your-agent.example.com"}/agent/ghost/webhook?site=YOUR_CREATOR_ID`} />
           </div>
 
           <Callout type="warning">

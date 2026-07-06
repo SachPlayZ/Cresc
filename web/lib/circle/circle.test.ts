@@ -18,7 +18,6 @@ import {
   signPaymentAuthorization,
   withdrawFromGateway,
   type TxRef,
-  type X402Requirements,
 } from "./index.js";
 import { fromDisplay } from "../money.js";
 
@@ -35,7 +34,7 @@ test("buildPaymentRequirements — shape + amount encoding", () => {
   assert.equal(req.asset, "0x3600000000000000000000000000000000000000");
   assert.equal(req.amount, "10000"); // 10000 base units = $0.01
   assert.equal(req.payTo, MOCK_SELLER);
-  assert.ok(req.maxTimeoutSeconds > 604800, "maxTimeoutSeconds must be > 7 days");
+  assert.equal(req.maxTimeoutSeconds, 345600);
   assert.equal((req.extra as Record<string, string>)?.name, "GatewayWalletBatched");
   assert.equal(
     (req.extra as Record<string, string>)?.verifyingContract,
@@ -95,10 +94,11 @@ test("signPaymentAuthorization — mock mode returns EIP3009Auth shape", async (
   assert.ok(p.authorization);
 });
 
-test("withdrawFromGateway — mock mode returns TxRef with target chain", async () => {
-  const ref = await withdrawFromGateway(MOCK_PRIV, MOCK_BUYER, "baseSepolia", MOCK_PRICE);
-  assert.equal(ref.chain, "baseSepolia");
-  assert.ok(ref.hash.startsWith("0x"));
+test("withdrawFromGateway — web adapter rejects deprecated direct withdrawal", async () => {
+  await assert.rejects(
+    () => withdrawFromGateway(MOCK_PRIV, MOCK_BUYER, "baseSepolia", MOCK_PRICE),
+    /must be called on EC2/
+  );
 });
 
 test("buildPaymentRequirements — zero price encodes correctly", () => {

@@ -100,6 +100,7 @@ async function auditArticle(
   db: SupabaseClient,
   slug: string,
   creatorEoa: string | null,
+  contentContract: string | null,
   since: string
 ): Promise<void> {
   const { data: rows, error } = await db
@@ -187,30 +188,19 @@ async function auditArticle(
   }
 
   // --- Tip totals: only count tips, not unlock payments ---
-  // Tips have endpoint matching /api/x402/tip/%; unlocks have /api/x402/<slug>.
-  // Find the creator's ID to match the tip endpoint.
   let tipsAtomic = 0;
-  if (creatorEoa) {
-    // Look up creator by eoa_address to get their ID for the tip endpoint
-    const { data: creator } = await db
-      .from('creators')
-      .select('id')
-      .eq('eoa_address', creatorEoa)
-      .single();
+  if (contentContract) {
+    const { data: tipPayments } = await db
+      .from('payment_events')
+      .select('amount_usdc')
+      .eq('content_contract', contentContract)
+      .like('endpoint', '/api/x402/tip/%')
+      .gte('created_at', since);
 
-    if (creator?.id) {
-      const tipEndpoint = `/api/x402/tip/${creator.id as string}`;
-      const { data: tipPayments } = await db
-        .from('payment_events')
-        .select('amount_usdc')
-        .eq('endpoint', tipEndpoint)
-        .gte('created_at', since);
-
-      tipsAtomic = (tipPayments ?? []).reduce(
-        (sum, p) => sum + parseInt(p.amount_usdc as string, 10),
-        0
-      );
-    }
+    tipsAtomic = (tipPayments ?? []).reduce(
+      (sum, p) => sum + parseInt(p.amount_usdc as string, 10),
+      0
+    );
   }
 
   // Upsert: one canonical row per (article_slug, window_start hour bucket)
@@ -236,10 +226,11 @@ export async function runAudit(db: SupabaseClient): Promise<void> {
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  // Fetch articles with their creator EOA for self-tip / tip-endpoint filtering
+  // Fetch active articles with creator EOA for self-view filtering and content contract for tip totals.
   const { data: articles, error } = await db
     .from('articles')
-    .select('slug, creators(eoa_address)');
+    .select('slug, content_contract, creators(eoa_address)')
+    .eq('active', true);
 
   if (error || !articles || articles.length === 0) {
     console.log('[audit] no articles to audit');
@@ -249,7 +240,7 @@ export async function runAudit(db: SupabaseClient): Promise<void> {
   for (const article of articles) {
     try {
       const creatorEoa = (article.creators as { eoa_address?: string } | null)?.eoa_address ?? null;
-      await auditArticle(db, article.slug as string, creatorEoa, since);
+      await auditArticle(db, article.slug as string, creatorEoa, article.content_contract as string | null, since);
     } catch (err) {
       console.error(`[audit] failed for ${article.slug}:`, err);
     }

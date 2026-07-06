@@ -33,11 +33,8 @@ import {
   GATEWAY_FACILITATOR_URL,
   ARC_EXPLORER_BASE,
   ARC_RPC_URL,
-  CIRCLE_BUYER_WALLET_ID,
-  CIRCLE_BUYER_WALLET_ADDRESS,
-  CIRCLE_SELLER_WALLET_ID,
+  isCircleWalletMode,
 } from "../config";
-import { isCircleWalletMode, makeCircleSigner, getCircleWalletBalance } from "./wallets";
 
 // --- Public types (no SDK leaks past this barrel) ---
 
@@ -92,6 +89,23 @@ const ERC20_ABI = [
     type: "function",
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
+const CONTENT_VAULT_ABI = [
+  {
+    name: "priceAtomic",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "withdrawNonce",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
     outputs: [{ type: "uint256" }],
   },
 ] as const;
@@ -201,6 +215,7 @@ export async function getGatewayBalance(address: string): Promise<{
   withdrawable: UsdcAmount;
   withdrawing: UsdcAmount;
 }> {
+  void address;
   if (isMockCircle) {
     return {
       total: MOCK_BALANCE,
@@ -208,15 +223,7 @@ export async function getGatewayBalance(address: string): Promise<{
       withdrawing: { value: 0n, decimals: 6 },
     };
   }
-  // Circle wallet mode: read Circle-managed wallet balance (no raw key needed).
-  if (isCircleWalletMode) {
-    const balance = CIRCLE_SELLER_WALLET_ID
-      ? await getCircleWalletBalance(CIRCLE_SELLER_WALLET_ID)
-      : { value: 0n, decimals: 6 };
-    return { total: balance, withdrawable: balance, withdrawing: { value: 0n, decimals: 6 } };
-  }
-  // Raw key path (EC2 only) — Vercel never reaches here since SELLER_PRIVATE_KEY not exported to web.
-  throw new Error('[circle] getGatewayBalance: ARC_RPC_URL required for non-Circle-wallet mode');
+  throw new Error('[circle] getGatewayBalance is deprecated in contract-native payment flow');
 }
 
 /**
@@ -225,7 +232,7 @@ export async function getGatewayBalance(address: string): Promise<{
  */
 export function buildPaymentRequirements(
   price: UsdcAmount,
-  sellerAddress: string
+  payToAddress: string
 ): X402Requirements {
   return {
     scheme: "exact",
@@ -234,13 +241,41 @@ export function buildPaymentRequirements(
     amount: price.value.toString(),
     // > 7 days: Gateway rejects validBefore < 7 days (CLAUDE.md §4.3)
     maxTimeoutSeconds: 345600,
-    payTo: sellerAddress,
+    payTo: payToAddress,
     extra: {
       name: "GatewayWalletBatched",
       version: "1",
       verifyingContract: GATEWAY_WALLET_ADDRESS,
     },
   };
+}
+
+/** Current withdrawal nonce for a ContentVault — required for building the EIP-712
+ * withdrawal message the creator's UCW wallet signs (see /api/withdraw/sign-request). */
+export async function readVaultWithdrawNonce(contentContract: string): Promise<bigint> {
+  if (isMockCircle || !ARC_RPC_URL) return 0n;
+  return makePublicClient().readContract({
+    address: contentContract as `0x${string}`,
+    abi: CONTENT_VAULT_ABI,
+    functionName: "withdrawNonce",
+  });
+}
+
+export async function readContentPriceAtomic(
+  contentContract: string,
+  fallbackAtomic: string
+): Promise<string> {
+  if (isMockCircle || !ARC_RPC_URL) return fallbackAtomic;
+  try {
+    const price = await makePublicClient().readContract({
+      address: contentContract as `0x${string}`,
+      abi: CONTENT_VAULT_ABI,
+      functionName: "priceAtomic",
+    });
+    return price.toString();
+  } catch {
+    return fallbackAtomic;
+  }
 }
 
 /**
@@ -275,8 +310,7 @@ export async function verifyAndSettle(
 
 /**
  * Sign an EIP-3009 payment authorization (buyer side).
- * When CIRCLE_BUYER_WALLET_ID is configured, uses Circle MPC signTypedData (no raw key needed).
- * Falls back to viem privateKeyToAccount with the raw privKey param.
+ * Buyer side must use a raw-key EOA. Circle SCA/EIP-1271 signatures are not accepted by x402 Gateway ecrecover.
  * BatchEvmScheme handles building the EIP-712 typed data and calling signer.signTypedData.
  */
 export async function signPaymentAuthorization(
@@ -300,28 +334,18 @@ export async function signPaymentAuthorization(
     };
   }
 
-  let signer: { address: `0x${string}`; signTypedData: (...args: unknown[]) => Promise<`0x${string}`> };
-
-  if (isCircleWalletMode && CIRCLE_BUYER_WALLET_ID && CIRCLE_BUYER_WALLET_ADDRESS) {
-    // Circle developer-controlled wallet path: MPC signing via Circle API (no raw key).
-    signer = makeCircleSigner(
-      CIRCLE_BUYER_WALLET_ID,
-      CIRCLE_BUYER_WALLET_ADDRESS as `0x${string}`
-    ) as typeof signer;
-  } else {
-    // Raw EOA key fallback (generate-wallets or manual config).
-    const account = privateKeyToAccount(privKey as `0x${string}`);
-    const walletClient = createWalletClient({
-      account,
-      chain: arcTestnetChain,
-      transport: http(requireRpc()),
-    });
-    signer = {
-      address: account.address,
-      signTypedData: (params: Parameters<typeof walletClient.signTypedData>[0]) =>
-        walletClient.signTypedData(params),
-    } as typeof signer;
-  }
+  if (!privKey) throw new Error("[circle] raw buyer private key required for x402 EIP-3009 signing");
+  const account = privateKeyToAccount(privKey as `0x${string}`);
+  const walletClient = createWalletClient({
+    account,
+    chain: arcTestnetChain,
+    transport: http(requireRpc()),
+  });
+  const signer = {
+    address: account.address,
+    signTypedData: (params: Parameters<typeof walletClient.signTypedData>[0]) =>
+      walletClient.signTypedData(params),
+  };
 
   const scheme = new BatchEvmScheme(signer);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -341,6 +365,10 @@ export async function withdrawFromGateway(
   _chain: string,
   _amount: UsdcAmount
 ): Promise<TxRef> {
+  void _privKey;
+  void _to;
+  void _chain;
+  void _amount;
   throw new Error('[circle] withdrawFromGateway must be called on EC2 via /agent/withdraw endpoint');
 }
 

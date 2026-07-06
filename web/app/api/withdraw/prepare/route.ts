@@ -1,158 +1,120 @@
 // POST /api/withdraw/prepare
-// Builds BurnIntent + creates UCW signTypedData challenge.
-// Browser executes challenge via W3S SDK to get signature, then calls /api/withdraw/submit.
+// Contract-native withdrawal: verifies creator ownership and asks EC2 to withdraw from ContentVault.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { maxUint256, zeroAddress } from 'viem';
-import { randomBytes } from 'node:crypto';
 import { createServerClient } from '../../../../lib/db';
-import { createSignTypedDataChallenge } from '../../../../lib/circle/ucw';
-import {
-  GATEWAY_WALLET_ADDRESS,
-  GATEWAY_MINTER_ADDRESS,
-  USDC_ADDRESS,
-} from '../../../../lib/config';
+import { assertCreatorOwnership } from '../../../../lib/auth/creator';
+import { buildHmacHeaders } from '../../../../lib/hmac';
 
-const ARC_DOMAIN = 26;
-const EIP712_BURN_DOMAIN = { name: 'GatewayWallet', version: '1' };
-const BURN_INTENT_TYPES = {
-  EIP712Domain: [
-    { name: 'name',    type: 'string' },
-    { name: 'version', type: 'string' },
-  ],
-  TransferSpec: [
-    { name: 'version',              type: 'uint32' },
-    { name: 'sourceDomain',         type: 'uint32' },
-    { name: 'destinationDomain',    type: 'uint32' },
-    { name: 'sourceContract',       type: 'bytes32' },
-    { name: 'destinationContract',  type: 'bytes32' },
-    { name: 'sourceToken',          type: 'bytes32' },
-    { name: 'destinationToken',     type: 'bytes32' },
-    { name: 'sourceDepositor',      type: 'bytes32' },
-    { name: 'destinationRecipient', type: 'bytes32' },
-    { name: 'sourceSigner',         type: 'bytes32' },
-    { name: 'destinationCaller',    type: 'bytes32' },
-    { name: 'value',                type: 'uint256' },
-    { name: 'salt',                 type: 'bytes32' },
-    { name: 'hookData',             type: 'bytes' },
-  ],
-  BurnIntent: [
-    { name: 'maxBlockHeight', type: 'uint256' },
-    { name: 'maxFee',         type: 'uint256' },
-    { name: 'spec',           type: 'TransferSpec' },
-  ],
-};
+const EC2_AGENT_BASE = process.env.EC2_AGENT_BASE_URL ?? '';
 
-const CCTP_DOMAINS: Record<string, number> = {
-  'arc': 26, 'arc-testnet': 26, 'arctestnet': 26,
-  'ethereum': 0, 'eth': 0,
-  'avalanche': 1, 'avax': 1,
-  'op-mainnet': 2, 'optimism': 2, 'op': 2,
-  'arbitrum': 3, 'arb': 3,
-  'base': 6,
-  'polygon': 7, 'matic': 7,
-};
-
-function getCctpDomain(chain: string): number {
-  const domain = CCTP_DOMAINS[chain.toLowerCase().replace(/[\s_]/g, '-')];
-  if (domain === undefined) throw new Error(`Unknown chain: ${chain}`);
-  return domain;
+// Splits a 65-byte ECDSA signature (0x + 130 hex chars: r(32) + s(32) + v(1)) as
+// returned by Circle's signTypedData challenge into the (v, r, s) triple the
+// ContentVault.withdrawSigned ABI expects.
+function splitSignature(sig: string): { v: number; r: string; s: string } {
+  const clean = sig.startsWith('0x') ? sig.slice(2) : sig;
+  if (clean.length !== 130) throw new Error('invalid signature length');
+  const r = `0x${clean.slice(0, 64)}`;
+  const s = `0x${clean.slice(64, 128)}`;
+  let v = parseInt(clean.slice(128, 130), 16);
+  if (v < 27) v += 27;
+  return { v, r, s };
 }
-
-function addressToBytes32(addr: string): string {
-  return '0x' + addr.toLowerCase().replace('0x', '').padStart(64, '0');
-}
-
-const serialize = (v: unknown): unknown =>
-  typeof v === 'bigint'
-    ? v <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(v) : v.toString()
-    : Array.isArray(v) ? v.map(serialize)
-    : v && typeof v === 'object'
-      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, serialize(val)]))
-    : v;
 
 export async function POST(req: NextRequest) {
+  let withdrawalId: string | null = null;
+  const db = createServerClient();
   try {
-    const { creator_id, userToken, amount_atomic, destination_chain, destination_address } =
+    const { creator_id, userToken, content_contract, amount_atomic, destination_address, nonce, signature } =
       await req.json() as {
         creator_id?: string;
         userToken?: string;
+        content_contract?: string;
         amount_atomic?: string;
-        destination_chain?: string;
         destination_address?: string;
+        nonce?: string;
+        signature?: string;
       };
 
-    if (!creator_id || !userToken || !amount_atomic || !destination_chain || !destination_address) {
-      return NextResponse.json({ error: 'creator_id, userToken, amount_atomic, destination_chain, destination_address required' }, { status: 400 });
+    if (!creator_id || !userToken || !content_contract || !amount_atomic || !destination_address || !nonce || !signature) {
+      return NextResponse.json({ error: 'creator_id, userToken, content_contract, amount_atomic, destination_address, nonce, signature required' }, { status: 400 });
     }
 
-    const db = createServerClient();
-    const { data: creator } = await db
-      .from('creators')
-      .select('circle_wallet_id, eoa_address')
-      .eq('id', creator_id)
-      .single();
+    await assertCreatorOwnership(db, creator_id, userToken);
 
-    if (!creator?.circle_wallet_id || !creator?.eoa_address) {
-      return NextResponse.json({ error: 'creator wallet not provisioned' }, { status: 400 });
+    const { data: article, error: articleError } = await db
+      .from('articles')
+      .select('slug')
+      .eq('creator_id', creator_id)
+      .eq('content_contract', content_contract)
+      .eq('active', true)
+      .maybeSingle();
+    if (articleError) throw articleError;
+    if (!article) {
+      return NextResponse.json({ error: 'content contract does not belong to creator' }, { status: 403 });
     }
 
-    const destinationDomain = getCctpDomain(destination_chain);
-    const amountAtomic = BigInt(amount_atomic);
+    if (!EC2_AGENT_BASE) {
+      return NextResponse.json({ error: 'EC2_AGENT_BASE_URL not configured' }, { status: 503 });
+    }
 
-    const burnIntent = {
-      maxBlockHeight: maxUint256,
-      maxFee: 2_010_000n,
-      spec: {
-        version: 1,
-        sourceDomain: ARC_DOMAIN,
-        destinationDomain,
-        sourceContract:       addressToBytes32(GATEWAY_WALLET_ADDRESS),
-        destinationContract:  addressToBytes32(GATEWAY_MINTER_ADDRESS),
-        sourceToken:          addressToBytes32(USDC_ADDRESS),
-        destinationToken:     addressToBytes32(USDC_ADDRESS),
-        sourceDepositor:      addressToBytes32(creator.eoa_address),
-        destinationRecipient: addressToBytes32(destination_address),
-        sourceSigner:         addressToBytes32(creator.eoa_address),
-        destinationCaller:    addressToBytes32(zeroAddress),
-        value: amountAtomic,
-        salt: `0x${randomBytes(32).toString('hex')}`,
-        hookData: '0x',
-      },
-    };
+    const { v, r, s } = splitSignature(signature);
 
-    const eip712Data = serialize({
-      types: BURN_INTENT_TYPES,
-      domain: EIP712_BURN_DOMAIN,
-      primaryType: 'BurnIntent',
-      message: burnIntent,
-    });
-
-    const challengeId = await createSignTypedDataChallenge(
-      userToken,
-      creator.circle_wallet_id as string,
-      eip712Data as Record<string, unknown>
-    );
-
-    // Record withdrawal attempt before signing
+    // Record withdrawal attempt before relaying
     const { data: withdrawal } = await db
       .from('withdrawals')
       .insert({
         creator_id,
+        content_contract,
         amount_atomic,
-        destination_chain,
+        destination_chain: 'arc',
         destination_address,
         status: 'submitted',
       })
       .select('id')
       .single();
+    withdrawalId = withdrawal?.id ?? null;
+
+    const payload = JSON.stringify({
+      creator_id,
+      content_contract,
+      amount_atomic,
+      destination_address,
+      nonce,
+      v,
+      r,
+      s,
+      withdrawal_id: withdrawalId,
+    });
+    const agentRes = await fetch(`${EC2_AGENT_BASE}/agent/withdraw-content`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...buildHmacHeaders(payload) },
+      body: payload,
+    });
+    const agentJson = await agentRes.json() as { txHash?: string; error?: string };
+    if (!agentRes.ok || !agentJson.txHash) {
+      if (withdrawalId) await db.from('withdrawals').update({ status: 'failed' }).eq('id', withdrawalId);
+      return NextResponse.json({ error: agentJson.error ?? 'withdraw failed' }, { status: 502 });
+    }
+
+    await db.from('withdrawals')
+      .update({ status: 'confirmed', tx_hash: agentJson.txHash })
+      .eq('id', withdrawalId!);
 
     return NextResponse.json({
-      challengeId,
-      burnIntent: JSON.parse(JSON.stringify(burnIntent, (_, v) => typeof v === 'bigint' ? v.toString() : v)),
-      withdrawalId: withdrawal?.id ?? null,
+      status: 'confirmed',
+      txHash: agentJson.txHash,
+      withdrawalId,
     });
   } catch (err) {
+    // If the withdrawal row was already inserted, don't leave it stuck as 'submitted'
+    // forever — a thrown fetch (network error), not just a non-OK response, must also
+    // mark it failed.
+    if (withdrawalId) {
+      try {
+        await db.from('withdrawals').update({ status: 'failed' }).eq('id', withdrawalId);
+      } catch { /* best-effort — original error is already returned below */ }
+    }
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

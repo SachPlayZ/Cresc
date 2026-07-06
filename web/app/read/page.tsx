@@ -17,16 +17,17 @@ import { GhostUnlockButton } from "../../components/UnlockButton";
 import { TipButton } from "../../components/TipButton";
 import { decryptGhostKey } from "../../lib/repo/creators";
 
-function validateUnlockToken(token: string, slug: string): boolean {
+function validateUnlockToken(token: string, site: string, slug: string): boolean {
   try {
     const parts = token.split(':');
-    if (parts.length !== 4) return false;
-    const [expiry, tokenSlug, readerId, sig] = parts;
+    if (parts.length !== 5) return false;
+    const [expiry, tokenSite, tokenSlug, readerId, sig] = parts;
+    if (tokenSite !== site) return false;
     if (tokenSlug !== slug) return false;
     if (parseInt(expiry, 10) < Math.floor(Date.now() / 1000)) return false;
     const expected = crypto
       .createHmac('sha256', INTERNAL_HMAC_SECRET)
-      .update(`${expiry}:${slug}:${readerId}`)
+      .update(`${expiry}:${site}:${slug}:${readerId}`)
       .digest('hex');
     const sigBuf = Buffer.from(sig, 'hex');
     const expBuf = Buffer.from(expected, 'hex');
@@ -71,6 +72,7 @@ export default async function ReadPage({ searchParams }: PageProps) {
     .select("*, creators!inner(display_name, ghost_admin_key, ghost_key_enc, ghost_instance_url, eoa_address)")
     .eq("slug", slug)
     .eq("creator_id", site)
+    .eq("active", true)
     .single();
 
   if (!article) redirect("/");
@@ -79,10 +81,24 @@ export default async function ReadPage({ searchParams }: PageProps) {
     fromBaseUnits(BigInt(String(article.current_price_atomic)), USDC_ERC20_DECIMALS)
   );
   const currentPriceAtomic = BigInt(String(article.current_price_atomic));
+  const contentContract = article.content_contract as string | null;
+
+  if (!contentContract) {
+    return (
+      <main className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
+        <div className="max-w-md text-center space-y-3">
+          <h1 className="font-heading font-bold text-2xl">Content contract pending</h1>
+          <p className="text-sm text-muted-foreground">
+            This Ghost post needs to be re-synced so Cresc can deploy its onchain content vault.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   // Post-unlock: token present → validate then serve content
   if (params.unlock_token) {
-    if (!validateUnlockToken(params.unlock_token, slug)) {
+    if (!validateUnlockToken(params.unlock_token, site, slug)) {
       redirect(`/read?slug=${encodeURIComponent(slug)}&site=${encodeURIComponent(site)}`);
     }
 
@@ -151,12 +167,13 @@ export default async function ReadPage({ searchParams }: PageProps) {
           </div>
         </div>
 
-        <GhostReader html={ghostHtml} articleSlug={slug} />
+        <GhostReader html={ghostHtml} articleSlug={slug} site={site} />
 
-        <div className="max-w-2xl mx-auto px-6 pt-10 pb-16 border-t" style={{ borderColor: "var(--c-border-soft)" }}>
-          <TipButton
-            creatorId={site}
-            creatorName={(article.creators as { display_name: string }).display_name}
+	        <div className="max-w-2xl mx-auto px-6 pt-10 pb-16 border-t" style={{ borderColor: "var(--c-border-soft)" }}>
+	          <TipButton
+	            creatorId={site}
+	            contentContract={contentContract}
+	            creatorName={(article.creators as { display_name: string }).display_name}
             defaultAmountAtomic={(currentPriceAtomic / 2n).toString()}
           />
         </div>

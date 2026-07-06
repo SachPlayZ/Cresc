@@ -30,7 +30,7 @@ export function GhostUnlockButton({ slug, site, priceDisplay }: GhostUnlockButto
         const res = await fetch(`/api/unlock/${encodeURIComponent(slug)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reader_id: readerId, request_id: requestId }),
+          body: JSON.stringify({ reader_id: readerId, request_id: requestId, site }),
         });
         const data = await res.json() as {
           decision?: string; unlock_token?: string; reason?: string; error?: string;
