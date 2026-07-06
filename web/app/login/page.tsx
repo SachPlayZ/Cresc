@@ -151,6 +151,17 @@ export default function LoginPage() {
       </nav>
 
       <div className="max-w-xl mx-auto px-6 pt-16">
+        <div className="flex gap-1 mb-8 p-1 rounded-xl w-fit"
+          style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)" }}>
+          <span className="px-4 py-1.5 rounded-lg text-sm font-semibold"
+            style={{ background: "var(--c-accent)", color: "#fff" }}>
+            Log in
+          </span>
+          <Link href="/ghost-onboard" className="px-4 py-1.5 rounded-lg text-sm font-semibold no-underline transition-colors"
+            style={{ color: "var(--c-muted)" }}>
+            Join as Creator
+          </Link>
+        </div>
         <h1 className="font-heading font-bold text-3xl mb-2" style={{ letterSpacing: "-0.03em" }}>
           Log in
         </h1>

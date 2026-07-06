@@ -369,6 +369,17 @@ export default function GhostOnboardPage() {
 
         {step === 1 && (
           <form onSubmit={goStep2} className="flex flex-col gap-5">
+            <div className="flex gap-1 p-1 rounded-xl w-fit"
+              style={{ background: "var(--c-surface)", border: "1px solid var(--c-border)" }}>
+              <Link href="/login" className="px-4 py-1.5 rounded-lg text-sm font-semibold no-underline transition-colors"
+                style={{ color: "var(--c-muted)" }}>
+                Log in
+              </Link>
+              <span className="px-4 py-1.5 rounded-lg text-sm font-semibold"
+                style={{ background: "var(--c-accent)", color: "#fff" }}>
+                Join as Creator
+              </span>
+            </div>
             <StepLabel n={1} label="Your name" />
             <div>
               <Label htmlFor="name" className="font-mono text-xs text-muted-foreground uppercase tracking-wider block mb-1.5">

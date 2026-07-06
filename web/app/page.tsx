@@ -1343,22 +1343,6 @@ export default function Home() {
                 style={{ textDecoration: "none", display: "inline-flex" }}
               >
                 <Button
-                  className="cresc-btn-outline rounded-full text-sm font-semibold px-5 flex items-center justify-center"
-                  style={{
-                    height: 38,
-                    color: "var(--c-text)",
-                    border: "1px solid var(--c-border)",
-                    background: "transparent",
-                  }}
-                >
-                  Log in
-                </Button>
-              </Link>
-              <Link
-                href="/ghost-onboard"
-                style={{ textDecoration: "none", display: "inline-flex" }}
-              >
-                <Button
                   className="cresc-btn-accent rounded-full text-sm font-bold px-5 flex items-center justify-center"
                   style={{
                     height: 38,
@@ -1367,7 +1351,7 @@ export default function Home() {
                     boxShadow: "0 0 12px rgba(198, 248, 78, 0.15)",
                   }}
                 >
-                  Join as Creator
+                  Login
                 </Button>
               </Link>
               <Link href="/docs/ghost" style={{ display: "inline-flex" }}>
