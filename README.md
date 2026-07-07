@@ -39,22 +39,41 @@ A **Creator Audit Agent** screens raw telemetry for bot/spam patterns before the
 
 Three planes, two deploy targets, one settlement rail.
 
-```
-┌────────────────────────────┐   ┌──────────────────────────────┐   ┌───────────────────────┐
-│  web/  (Next.js / Vercel)  │   │  agents/  (Node / EC2)        │   │  contracts/ (Foundry) │
-│  stateless, no hot keys    │   │  always-on, holds raw keys    │   │  Arc Testnet          │
-│                            │   │                                │   │                       │
-│  • Creator onboarding +    │──▶│  • Reader Agent HTTP service  │──▶│  • ContentFactory     │
-│    Circle UCW wallet bind  │   │    (budget + LLM gates, pays  │   │    deploys per-post   │
-│  • Ghost content gate      │   │    via Gateway)               │   │    ContentVault       │
-│    (x402 unlock route)     │   │  • Watcher (hourly tunePrice) │   │  • ContentVault holds │
-│  • Ghost webhook proxy     │   │  • Creator Audit Agent        │   │    revenue, exposes   │
-│  • Withdrawal sign-request │   │  • Redeposit loop (Gateway)   │   │    withdraw /         │
-│    + relay to EC2          │   │                                │   │    withdrawSigned /   │
-└─────────────┬──────────────┘   └───────────────┬────────────────┘   │    tunePrice          │
-              │        HMAC-signed HTTP, both directions              └───────────┬───────────┘
-              │                                   │                                │
-              └───────────────── Supabase Postgres ┴──────── Arc RPC (viem) ───────┘
+```mermaid
+flowchart LR
+    reader(["Reader"])
+    ghost["Ghost blog<br/>+ cresc-ghost.js paywall snippet"]
+
+    subgraph web["web/ — Next.js on Vercel · stateless, no hot keys"]
+        dash["Creator dashboard<br/>Circle UCW onboarding"]
+        x402["x402 seller route<br/>verify · settle · unlock_token"]
+    end
+
+    subgraph agents["agents/ — Node on EC2 · always-on, holds raw keys"]
+        ra["Reader Agent<br/>budget + LLM gates"]
+        audit["Creator Audit Agent<br/>bot/spam filter"]
+        watcher["Watcher<br/>hourly repricing"]
+    end
+
+    subgraph chain["contracts/ — Arc Testnet"]
+        gateway["Circle Gateway + USDC"]
+        factory["ContentFactory"]
+        vault["ContentVault<br/>one per article"]
+    end
+
+    db[("Supabase<br/>Postgres")]
+
+    reader -- "unlock request" --> web
+    ghost -- "post webhooks" --> agents
+    web <-->|"HMAC-signed HTTP<br/>both directions"| agents
+    ra -- "EIP-3009<br/>Payment-Signature" --> x402
+    x402 -- "verify + settle<br/>facilitator API" --> gateway
+    gateway -- "batched USDC settlement" --> vault
+    factory -- "deploys" --> vault
+    watcher -- "tunePrice" --> vault
+    audit -- "audited telemetry" --> watcher
+    web --- db
+    agents --- db
 ```
 
 **Vercel ↔ EC2 boundary is HTTP, not a queue.** Every internal call carries `X-Cresc-Timestamp` + `X-Cresc-Signature` (`hmacSHA256` over `${timestamp}.${rawBody}`), verified on both sides. No public agent port — only Vercel egress and admin IPs reach it.
@@ -204,23 +223,44 @@ forge script contracts/script/DeployContentFactory.s.sol \
 
 Set the resulting address as `CONTENT_FACTORY_ADDRESS` in both `.env.local` files (the current testnet deployment is [`0x2727…6EAD`](https://testnet.arcscan.app/address/0x2727656c29471415c230C67fb7f6200aB0536EAD)).
 
-### 4. Apply migrations
+### 4. Apply migrations and seed
 
 ```bash
-cd agents && npx supabase db push
+cd agents
+npx supabase db push   # apply agents/supabase/migrations/
+npm run seed           # seed test articles + readers
 ```
 
-### 5. Run
+### 5. Fund the Gateway balance (live payments only)
+
+Skip this in mock mode. For real x402 settlement, deposit testnet USDC from the buyer EOA into Circle Gateway and verify:
 
 ```bash
-# Terminal 1 — Web frontend
+cd agents
+npm run deposit-gateway
+npm run test-gateway
+```
+
+### 6. Run
+
+```bash
+# Terminal 1 — Web frontend (http://localhost:3000)
 cd web && npm run dev
 
-# Terminal 2 — Agents service
+# Terminal 2 — Agents service (tsx watch, reads agents/.env.local)
 cd agents && npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+> [!TIP]
+> With no `GROQ_API_KEY` set, agents run in **mock mode**: LLM gates return deterministic stubs and chain startup assertions are relaxed, so the full unlock loop works locally with nothing but Supabase configured.
+
+### Checks
+
+```bash
+cd web && npm run lint && npx tsx --test lib/money.test.ts   # lint + money unit tests
+cd agents && npm run typecheck                               # tsc --noEmit (also runs in CI)
+forge test -vv                                               # contracts, from repo root
+```
 
 > [!WARNING]
 > `.env.local` files hold real secrets (RPC token, service-role key, raw private keys) — never commit them. They're gitignored by default; keep it that way.
