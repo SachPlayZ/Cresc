@@ -5,7 +5,13 @@
 
 import { toast } from "sonner";
 import { fromBaseUnits, toDisplay } from "./money";
-import { ARC_EXPLORER_BASE, USDC_ERC20_DECIMALS } from "./config";
+
+// Duplicated from lib/config.ts (not imported) — that module throws at import time if
+// server-only secrets like INTERNAL_HMAC_SECRET are missing from process.env, which is
+// always true in a browser bundle. This is a client-side helper, so it must never pull
+// in lib/config.ts, even transitively — these two values are public constants anyway.
+const ARC_EXPLORER_BASE = "https://testnet.arcscan.app" as const;
+const USDC_ERC20_DECIMALS = 6 as const;
 
 export function showTxConfirmedToast(amountAtomic: string | bigint, txHash: string) {
   const display = toDisplay(fromBaseUnits(BigInt(amountAtomic), USDC_ERC20_DECIMALS));

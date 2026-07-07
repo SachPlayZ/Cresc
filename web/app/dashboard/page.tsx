@@ -229,7 +229,14 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {creator && <WithdrawSection creator={{ id: creator.id, eoa_address: creator.eoa_address ?? null }} />}
+        {creator && (
+          <WithdrawSection
+            creator={{ id: creator.id, eoa_address: creator.eoa_address ?? null }}
+            contentContracts={articles
+              .map((a) => a.content_contract)
+              .filter((c): c is string => !!c)}
+          />
+        )}
 
       </div>
     </main>

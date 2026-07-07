@@ -25,22 +25,27 @@ export async function POST(req: NextRequest) {
   let withdrawalId: string | null = null;
   const db = createServerClient();
   try {
-    const { creator_id, userToken, content_contract, amount_atomic, destination_address, nonce, signature } =
+    const { creator_id, userToken, content_contract, amount_atomic, nonce, signature } =
       await req.json() as {
         creator_id?: string;
         userToken?: string;
         content_contract?: string;
         amount_atomic?: string;
-        destination_address?: string;
         nonce?: string;
         signature?: string;
       };
 
-    if (!creator_id || !userToken || !content_contract || !amount_atomic || !destination_address || !nonce || !signature) {
-      return NextResponse.json({ error: 'creator_id, userToken, content_contract, amount_atomic, destination_address, nonce, signature required' }, { status: 400 });
+    if (!creator_id || !userToken || !content_contract || !amount_atomic || !nonce || !signature) {
+      return NextResponse.json({ error: 'creator_id, userToken, content_contract, amount_atomic, nonce, signature required' }, { status: 400 });
     }
 
-    await assertCreatorOwnership(db, creator_id, userToken);
+    // destination_address is never accepted from the client — always the UCW wallet
+    // Circle/Cresc has on record for this creator, matching what sign-request signed.
+    const creator = await assertCreatorOwnership(db, creator_id, userToken);
+    if (!creator.eoa_address) {
+      return NextResponse.json({ error: 'creator has no UCW wallet address on record' }, { status: 400 });
+    }
+    const destination_address = creator.eoa_address;
 
     const { data: article, error: articleError } = await db
       .from('articles')

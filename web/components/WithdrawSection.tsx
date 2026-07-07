@@ -1,11 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useCookies } from "react-cookie";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
-import { fromDisplay } from "../lib/money";
 import { showTxConfirmedToast } from "../lib/toast-tx";
 
 // Deliberately narrow — never accept the full Creator row here. This is a client
@@ -16,7 +14,7 @@ type WithdrawCreator = { id: string; eoa_address: string | null };
 const CIRCLE_APP_ID = process.env.NEXT_PUBLIC_CIRCLE_APP_ID ?? "";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID ?? "";
 
-type Status = 'idle' | 'auth' | 'signing' | 'submitting' | 'done' | 'error';
+type Status = 'idle' | 'auth' | 'withdrawing' | 'done' | 'error';
 
 function describeError(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -28,7 +26,13 @@ function describeError(err: unknown): string {
   }
 }
 
-export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
+interface WithdrawSectionProps {
+  creator: WithdrawCreator;
+  /** Every active content_contract this creator owns — one vault per piece of content. */
+  contentContracts: string[];
+}
+
+export function WithdrawSection({ creator, contentContracts }: WithdrawSectionProps) {
   const sdkRef = useRef<W3SSdk | null>(null);
   const [cookies, setCookie] = useCookies([
     'circle_device_token', 'circle_device_enc_key',
@@ -40,11 +44,9 @@ export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
   const deviceToken = cookies.circle_device_token as string | undefined;
   const deviceEncKey = cookies.circle_device_enc_key as string | undefined;
 
-  const [amount, setAmount] = useState("");
-  const [contentContract, setContentContract] = useState("");
-  const [destAddress, setDestAddress] = useState("");
   const [status, setStatus] = useState<Status>('idle');
-  const [txHash, setTxHash] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [txHashes, setTxHashes] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const creatorId = creator.id;
@@ -77,24 +79,57 @@ export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
     void init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleWithdraw(e: React.FormEvent) {
-    e.preventDefault();
+  async function withdrawOneVault(contentContract: string): Promise<{ skipped: boolean; txHash?: string }> {
+    const signReqRes = await fetch('/api/withdraw/sign-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ creator_id: creatorId, userToken, content_contract: contentContract }),
+    });
+    const signReq = await signReqRes.json() as {
+      challengeId?: string; nonce?: string; amount_atomic?: string; destination_address?: string;
+      skipped?: boolean; error?: string;
+    };
+    if (signReq.skipped) return { skipped: true };
+    if (!signReqRes.ok || !signReq.challengeId || !signReq.nonce || !signReq.amount_atomic) {
+      throw new Error(signReq.error ?? `Failed to prepare signature for ${contentContract}`);
+    }
+
+    const sdk = sdkRef.current;
+    if (!sdk) throw new Error('SDK not initialized');
+    sdk.setAuthentication({ userToken: userToken!, encryptionKey: encKey! });
+
+    const signature = await new Promise<string>((resolve, reject) => {
+      sdk.execute(signReq.challengeId!, (err, result) => {
+        if (err) { reject(new Error('Signing failed: ' + String(err))); return; }
+        const sig = (result as { signature?: string } | undefined)?.signature;
+        if (!sig) { reject(new Error('No signature returned')); return; }
+        resolve(sig);
+      });
+    });
+
+    const prepRes = await fetch('/api/withdraw/prepare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        creator_id: creatorId,
+        userToken,
+        content_contract: contentContract,
+        amount_atomic: signReq.amount_atomic,
+        nonce: signReq.nonce,
+        signature,
+      }),
+    });
+    const prep = await prepRes.json() as { txHash?: string; error?: string };
+    if (!prepRes.ok || !prep.txHash) throw new Error(prep.error ?? `Withdraw failed for ${contentContract}`);
+
+    showTxConfirmedToast(signReq.amount_atomic, prep.txHash);
+    return { skipped: false, txHash: prep.txHash };
+  }
+
+  async function handleWithdrawAll() {
     setErrorMsg(null);
 
-    if (!amount || !destAddress || !creatorId) {
-      setErrorMsg("Amount, destination address, and creator ID required.");
-      return;
-    }
-
-    let amountAtomic: string;
-    try {
-      const parsed = fromDisplay(amount, 6);
-      if (parsed.value <= 0n) throw new Error("amount must be positive");
-      amountAtomic = parsed.value.toString();
-    } catch {
-      setErrorMsg("Invalid amount.");
-      return;
-    }
+    if (contentContracts.length === 0) return;
 
     // Re-auth if no session
     if (!userToken || !encKey) {
@@ -103,66 +138,20 @@ export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
       return;
     }
 
-    setStatus('signing');
+    setStatus('withdrawing');
+    setProgress({ done: 0, total: contentContracts.length });
+    const hashes: string[] = [];
     try {
-      // Step 1: get a signTypedData challenge for the EIP-712 Withdraw message
-      // (creator's own UCW wallet authorizes exactly this to/amount/nonce — see
-      // contracts/src/ContentVault.sol withdrawSigned).
-      const signReqRes = await fetch('/api/withdraw/sign-request', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          creator_id: creatorId,
-          userToken,
-          amount_atomic: amountAtomic,
-          content_contract: contentContract,
-          destination_address: destAddress,
-        }),
-      });
-      const signReq = await signReqRes.json() as { challengeId?: string; nonce?: string; error?: string };
-      if (!signReqRes.ok || !signReq.challengeId || !signReq.nonce) {
-        throw new Error(signReq.error ?? 'Failed to prepare signature request');
+      for (let i = 0; i < contentContracts.length; i++) {
+        const result = await withdrawOneVault(contentContracts[i]);
+        if (result.txHash) hashes.push(result.txHash);
+        setProgress({ done: i + 1, total: contentContracts.length });
       }
-
-      const sdk = sdkRef.current;
-      if (!sdk) throw new Error('SDK not initialized');
-      sdk.setAuthentication({ userToken, encryptionKey: encKey });
-
-      const signature = await new Promise<string>((resolve, reject) => {
-        sdk.execute(signReq.challengeId!, (err, result) => {
-          if (err) { reject(new Error('Signing failed: ' + String(err))); return; }
-          const sig = (result as { signature?: string } | undefined)?.signature;
-          if (!sig) { reject(new Error('No signature returned')); return; }
-          resolve(sig);
-        });
-      });
-
-      setStatus('submitting');
-      const prepRes = await fetch('/api/withdraw/prepare', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          creator_id: creatorId,
-          userToken,
-          amount_atomic: amountAtomic,
-          content_contract: contentContract,
-          destination_address: destAddress,
-          nonce: signReq.nonce,
-          signature,
-        }),
-      });
-      const prep = await prepRes.json() as {
-        status?: string;
-        txHash?: string;
-        withdrawalId?: string | null;
-        error?: string;
-      };
-      if (!prepRes.ok || prep.error) throw new Error(prep.error ?? 'Prepare failed');
-      setTxHash(prep.txHash!);
+      setTxHashes(hashes);
       setStatus('done');
-      showTxConfirmedToast(amountAtomic, prep.txHash!);
     } catch (e) {
-      setErrorMsg(String(e));
+      setTxHashes(hashes);
+      setErrorMsg(describeError(e));
       setStatus('error');
     }
   }
@@ -177,44 +166,33 @@ export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
         Wallet: {creator.eoa_address.slice(0, 10)}…{creator.eoa_address.slice(-6)}
       </div>
 
-      {status === 'done' && txHash ? (
+      {status === 'done' ? (
         <div className="font-mono text-xs px-3 py-2 rounded-lg"
           style={{ background: "rgba(34,197,94,0.1)", color: "#16a34a", border: "1px solid rgba(34,197,94,0.2)" }}>
-          ✓ Withdrawn — tx: {txHash.slice(0, 18)}…
+          {txHashes.length === 0
+            ? '✓ Nothing to withdraw — every vault is empty'
+            : `✓ Withdrew from ${txHashes.length} vault${txHashes.length !== 1 ? 's' : ''} → ${creator.eoa_address.slice(0, 10)}…`}
         </div>
       ) : (
-        <form onSubmit={handleWithdraw} className="flex flex-col gap-3">
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="font-mono text-xs text-muted-foreground block mb-1">Amount (USDC)</label>
-              <Input placeholder="0.10" value={amount} onChange={(e) => setAmount(e.target.value)}
-                className="h-9 text-sm font-mono" />
-            </div>
-            <div className="flex-1">
-              <label className="font-mono text-xs text-muted-foreground block mb-1">Content contract</label>
-              <Input placeholder="0x…" value={contentContract} onChange={(e) => setContentContract(e.target.value)}
-                className="h-9 text-sm font-mono" />
-            </div>
-          </div>
-          <div>
-            <label className="font-mono text-xs text-muted-foreground block mb-1">Destination address</label>
-            <Input placeholder="0x…" value={destAddress} onChange={(e) => setDestAddress(e.target.value)}
-              className="h-9 text-sm font-mono" />
-          </div>
+        <div className="flex flex-col gap-3">
           {errorMsg && (
             <div className="font-mono text-xs px-3 py-2 rounded-lg"
               style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}>
               {errorMsg}
             </div>
           )}
-          <Button type="submit" size="sm" className="h-9 text-xs font-mono"
-            disabled={status === 'signing' || status === 'submitting' || status === 'auth'}>
+          <Button
+            onClick={handleWithdrawAll}
+            size="sm"
+            className="h-9 text-xs font-mono w-fit"
+            disabled={status === 'withdrawing' || status === 'auth' || contentContracts.length === 0}
+          >
             {status === 'auth' ? 'Sign in with Google…' :
-             status === 'signing' ? 'Approve in Circle UI…' :
-             status === 'submitting' ? 'Submitting…' :
-             'Withdraw →'}
+             status === 'withdrawing' ? `Withdrawing ${progress?.done ?? 0}/${progress?.total ?? contentContracts.length}…` :
+             contentContracts.length === 0 ? 'No content yet' :
+             'Withdraw all earnings →'}
           </Button>
-        </form>
+        </div>
       )}
     </div>
   );

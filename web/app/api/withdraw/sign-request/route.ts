@@ -1,40 +1,42 @@
 // POST /api/withdraw/sign-request
 // Step 1 of a contract-native withdrawal: verifies creator ownership of the content
-// contract, reads the vault's current withdrawNonce onchain, and asks Circle to create
-// a signTypedData challenge for the creator's own UCW wallet over the EIP-712
-// `Withdraw(address to,uint256 amountAtomic,uint256 nonce)` message (see
+// contract, reads the vault's current on-chain USDC balance and withdrawNonce, and asks
+// Circle to create a signTypedData challenge for the creator's own UCW wallet over the
+// EIP-712 `Withdraw(address to,uint256 amountAtomic,uint256 nonce)` message (see
 // contracts/src/ContentVault.sol withdrawSigned). The frontend completes the challenge
 // via sdk.execute(), then posts the resulting signature to /api/withdraw/prepare.
+//
+// Both `amount_atomic` (the vault's full current balance — "withdraw all") and
+// `destination_address` (always the creator's own on-record eoa_address) are derived
+// server-side, never accepted from the client — a creator can only ever withdraw their
+// full earnings to the UCW wallet Circle/Cresc already has on file for them.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '../../../../lib/db';
 import { assertCreatorOwnership } from '../../../../lib/auth/creator';
 import { requestTypedDataSignature } from '../../../../lib/circle/ucw';
-import { readVaultWithdrawNonce } from '../../../../lib/circle';
+import { readVaultWithdrawNonce, readVaultBalance } from '../../../../lib/circle';
 import { ARC_CHAIN_ID } from '../../../../lib/config';
 
 export async function POST(req: NextRequest) {
   try {
-    const { creator_id, userToken, content_contract, amount_atomic, destination_address } =
-      await req.json() as {
-        creator_id?: string;
-        userToken?: string;
-        content_contract?: string;
-        amount_atomic?: string;
-        destination_address?: string;
-      };
+    const { creator_id, userToken, content_contract } = await req.json() as {
+      creator_id?: string;
+      userToken?: string;
+      content_contract?: string;
+    };
 
-    if (!creator_id || !userToken || !content_contract || !amount_atomic || !destination_address) {
-      return NextResponse.json({ error: 'creator_id, userToken, content_contract, amount_atomic, destination_address required' }, { status: 400 });
-    }
-    if (!/^[0-9]+$/.test(amount_atomic) || BigInt(amount_atomic) <= 0n) {
-      return NextResponse.json({ error: 'amount_atomic must be a positive atomic USDC integer' }, { status: 400 });
+    if (!creator_id || !userToken || !content_contract) {
+      return NextResponse.json({ error: 'creator_id, userToken, content_contract required' }, { status: 400 });
     }
 
     const db = createServerClient();
     const creator = await assertCreatorOwnership(db, creator_id, userToken);
     if (!creator.circle_wallet_id) {
       return NextResponse.json({ error: 'creator has no Circle wallet bound' }, { status: 400 });
+    }
+    if (!creator.eoa_address) {
+      return NextResponse.json({ error: 'creator has no UCW wallet address on record' }, { status: 400 });
     }
 
     const { data: article, error: articleError } = await db
@@ -49,6 +51,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'content contract does not belong to creator' }, { status: 403 });
     }
 
+    const balance = await readVaultBalance(content_contract);
+    if (balance <= 0n) {
+      return NextResponse.json({ skipped: true, reason: 'zero_balance' });
+    }
+
+    const destinationAddress = creator.eoa_address;
+    const amountAtomic = balance.toString();
     const nonce = await readVaultWithdrawNonce(content_contract);
     const typedData = {
       types: {
@@ -72,15 +81,20 @@ export async function POST(req: NextRequest) {
         verifyingContract: content_contract,
       },
       message: {
-        to: destination_address,
-        amountAtomic: amount_atomic,
+        to: destinationAddress,
+        amountAtomic,
         nonce: nonce.toString(),
       },
     };
 
     const { challengeId } = await requestTypedDataSignature(userToken, creator.circle_wallet_id, typedData);
 
-    return NextResponse.json({ challengeId, nonce: nonce.toString() });
+    return NextResponse.json({
+      challengeId,
+      nonce: nonce.toString(),
+      amount_atomic: amountAtomic,
+      destination_address: destinationAddress,
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

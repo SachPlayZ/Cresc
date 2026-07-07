@@ -110,6 +110,16 @@ const CONTENT_VAULT_ABI = [
   },
 ] as const;
 
+const ERC20_BALANCE_ABI = [
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+] as const;
+
 function requireRpc(): string {
   if (!ARC_RPC_URL) throw new Error("[circle] ARC_RPC_URL not set");
   return ARC_RPC_URL;
@@ -258,6 +268,18 @@ export async function readVaultWithdrawNonce(contentContract: string): Promise<b
     address: contentContract as `0x${string}`,
     abi: CONTENT_VAULT_ABI,
     functionName: "withdrawNonce",
+  });
+}
+
+/** Current USDC balance held by a ContentVault — this *is* "all earnings" for that
+ * piece of content, since x402 settlement pays directly into the vault. */
+export async function readVaultBalance(contentContract: string): Promise<bigint> {
+  if (isMockCircle || !ARC_RPC_URL) return 0n;
+  return makePublicClient().readContract({
+    address: USDC_ADDRESS as `0x${string}`,
+    abi: ERC20_BALANCE_ABI,
+    functionName: "balanceOf",
+    args: [contentContract as `0x${string}`],
   });
 }
 

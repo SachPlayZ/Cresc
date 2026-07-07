@@ -65,9 +65,15 @@ export const EC2_AGENT_BASE_URL: string = getEnv("EC2_AGENT_BASE_URL") ?? "";
 // --- Ghost key encryption (AES-256-GCM, 32-byte hex key) ---
 export const GHOST_KEY_ENCRYPTION_SECRET: string = getEnv("GHOST_KEY_ENCRYPTION_SECRET") ?? "";
 
-// INTERNAL_HMAC_SECRET assertion — skipped at Next.js build time (NEXT_PHASE env var).
-// Throws at runtime so misconfigured deployments fail fast on first request.
+// INTERNAL_HMAC_SECRET assertion — skipped at Next.js build time (NEXT_PHASE env var)
+// and in the browser (`typeof window` guard): this file is server-only by design (see
+// "server-side only — never NEXT_PUBLIC_" above), but if a client component ever
+// imports it anyway (even transitively), server env vars are never present in a browser
+// bundle — this check would otherwise throw on every single page load for a reason
+// completely unrelated to whether the server is actually misconfigured.
+// Throws at server runtime so misconfigured deployments still fail fast on first request.
 if (
+  typeof window === 'undefined' &&
   !INTERNAL_HMAC_SECRET &&
   process.env.NEXT_PHASE !== 'phase-production-build' &&
   process.env.NEXT_PHASE !== 'phase-export'

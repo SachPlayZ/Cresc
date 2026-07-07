@@ -539,6 +539,21 @@ app.post('/agent/withdraw-content', hmacAuth, async (req: Request, res: Response
       res.status(403).json({ error: 'content contract does not belong to creator' });
       return;
     }
+
+    // Defense in depth: Vercel already derives destination_address from creator.eoa_address
+    // server-side and never trusts client input for it, but re-verify here too — this is the
+    // last stop before an on-chain transfer, and it's cheap to double-check a creator's
+    // earnings can only ever move to their own on-record UCW wallet.
+    const { data: creatorRow } = await db
+      .from('creators')
+      .select('eoa_address')
+      .eq('id', creator_id)
+      .maybeSingle();
+    if (!creatorRow?.eoa_address || creatorRow.eoa_address.toLowerCase() !== destination_address.toLowerCase()) {
+      res.status(403).json({ error: 'destination_address must match the creator\'s on-record UCW wallet' });
+      return;
+    }
+
     const txHash = await withdrawFromContent(
       content_contract,
       destination_address,
