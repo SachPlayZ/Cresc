@@ -35,7 +35,7 @@ interface WithdrawSectionProps {
 
 export function WithdrawSection({ creator, contentContracts }: WithdrawSectionProps) {
   const sdkRef = useRef<W3SSdk | null>(null);
-  const [cookies, setCookie] = useCookies([
+  const [cookies, setCookie, removeCookie] = useCookies([
     'circle_device_id', 'circle_device_token', 'circle_device_enc_key',
     'circle_user_token', 'circle_enc_key',
   ]);
@@ -56,7 +56,19 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
   useEffect(() => {
     if (!CIRCLE_APP_ID) return;
     const onLoginComplete = (err: unknown, res: unknown) => {
-      if (err) { setErrorMsg("Re-auth failed: " + describeError(err)); setStatus('error'); return; }
+      if (err) {
+        // A stale/expired device token (e.g. carried over from an earlier /login or
+        // /ghost-onboard session in this same browser) surfaces here as Circle error
+        // 155140 "Invalid credentials" — the redirect completes but no session is
+        // granted. Clear device credentials so the next attempt registers a fresh
+        // device from scratch instead of retrying with the same bad ones.
+        removeCookie('circle_device_id', { path: '/' });
+        removeCookie('circle_device_token', { path: '/' });
+        removeCookie('circle_device_enc_key', { path: '/' });
+        setErrorMsg("Re-auth failed: " + describeError(err) + " — device session was stale, click Withdraw again to retry with a fresh one.");
+        setStatus('error');
+        return;
+      }
       const { userToken: ut, encryptionKey: ek } = res as { userToken: string; encryptionKey: string };
       setCookie('circle_user_token', ut, { path: '/' });
       setCookie('circle_enc_key', ek, { path: '/' });
@@ -149,14 +161,24 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
   // token (error 155101), which otherwise looks exactly like "asks to sign in again
   // right after signing in" — the redirect completes but no session is ever granted.
   async function triggerGoogleLogin() {
+    const sdk = sdkRef.current;
+    if (!sdk) throw new Error('SDK not ready — try again in a moment.');
+
+    // Regenerate the device id too if it's missing (e.g. just cleared after a stale-
+    // credentials failure) — don't just assume the mount-time effect already got one.
+    let id = deviceId;
+    if (!id) {
+      id = await sdk.getDeviceId();
+      setCookie('circle_device_id', id, { path: '/' });
+    }
+
     let dt = deviceToken;
     let dek = deviceEncKey;
     if (!dt || !dek) {
-      if (!deviceId) throw new Error('Still initializing — try again in a moment.');
       const res = await fetch('/api/ucw/device-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId }),
+        body: JSON.stringify({ deviceId: id }),
       });
       const data = await res.json() as { deviceToken?: string; deviceEncryptionKey?: string; error?: string };
       if (!res.ok || !data.deviceToken || !data.deviceEncryptionKey) {
@@ -168,8 +190,6 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
       setCookie('circle_device_enc_key', dek, { path: '/' });
     }
 
-    const sdk = sdkRef.current;
-    if (!sdk) throw new Error('SDK not ready — try again in a moment.');
     sdk.updateConfigs({
       appSettings: { appId: CIRCLE_APP_ID },
       loginConfigs: {
