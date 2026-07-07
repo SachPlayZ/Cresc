@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 Pay-per-article monetization for Ghost, settled in USDC on **Arc** via Circle Nanopayments (Gateway + x402). Next.js frontend on **Vercel**, always-on agents on **EC2**, per-content contracts on Arc.
 
-The full design lives in `cresc-architecture.md` — when this file and the architecture doc disagree, the architecture doc wins; flag the conflict instead of guessing.
+This file is the design source of truth.
 
 > **README.md is stale.** The actual architecture is an HTTP Express server on EC2 with HMAC-authenticated calls from Vercel, plus Arc content contracts deployed by a factory.
 
@@ -230,7 +230,7 @@ Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks to `POST
 
 ## Resolved architecture decisions
 
-These were open in `cresc-architecture.md §12`; they are now decided:
+These were once open questions; they are now decided:
 
 - **Auth provider:** Circle User Controlled Wallets on Arc Testnet. No external wallet connector, Supabase Auth, or Clerk. `user_id` = UCW wallet address.
 - **Ghost gate mechanism:** theme snippet (`web/public/cresc-ghost.js`) injected via Ghost Code Injection.

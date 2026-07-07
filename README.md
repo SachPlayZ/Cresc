@@ -256,4 +256,4 @@ Open [http://localhost:3000](http://localhost:3000).
 | `web/lib/hmac.ts` / `agents/src/middleware/hmac.ts` | Vercel ↔ EC2 request signing (keep in sync) |
 | `web/public/cresc-ghost.js` | Self-contained paywall snippet injected into Ghost sites |
 
-For the full design — invariants, startup assertions, resolved architecture decisions — see `CLAUDE.md` and `cresc-architecture.md`.
+For the full design — invariants, startup assertions, resolved architecture decisions — see `CLAUDE.md`.

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Pay-per-article monetization for Ghost, settled in USDC on **Arc** via Circle Nanopayments (Gateway + x402). Next.js frontend on **Vercel**, always-on agents on **EC2**, Circle Gateway for settlement.
 
-The full design lives in `cresc-architecture.md` — when this file and the architecture doc disagree, the architecture doc wins; flag the conflict instead of guessing.
+This file is the design source of truth.
 
 > **README.md is stale.** It describes an old DB-queue architecture ("No HTTP server — DB-only"). The actual architecture is an HTTP Express server on EC2 with HMAC-authenticated calls from Vercel, as documented below.
 
@@ -227,7 +227,7 @@ Ghost sends `post.published` / `post.updated` / `post.deleted` webhooks directly
 
 ## Resolved architecture decisions
 
-These were open in `cresc-architecture.md §12`; they are now decided:
+These were once open questions; they are now decided:
 
 - **Auth provider:** wallet-based (RainbowKit/wagmi on Arc Testnet). No Supabase Auth or Clerk. `user_id` = wallet address.
 - **Ghost gate mechanism:** theme snippet (`web/public/cresc-ghost.js`) injected via Ghost Code Injection.
