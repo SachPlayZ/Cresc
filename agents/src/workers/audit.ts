@@ -203,8 +203,12 @@ async function auditArticle(
     );
   }
 
-  // Upsert: one canonical row per (article_slug, window_start hour bucket)
-  const windowHour = new Date(since);
+  // Upsert: one canonical row per (article_slug, window_start hour bucket).
+  // Anchored to *now* (this audit run), not `since` (the 24h-ago lookback boundary
+  // used for the telemetry/tip queries above) — using `since` here wrote every row
+  // ~24h stale, which meant the Watcher's own 24h lookback (agents/src/workers/
+  // watcher.ts) never found a fresh-enough row and always saw demand=0.
+  const windowHour = new Date();
   windowHour.setMinutes(0, 0, 0);
 
   await db.from('telemetry_audited').upsert({
