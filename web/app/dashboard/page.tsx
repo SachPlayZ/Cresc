@@ -10,6 +10,9 @@ import { listArticlesByCreator, getCreator } from "../../lib/repo/index";
 import type { Article, Creator } from "../../lib/repo/types";
 import { fromBaseUnits, toDisplay } from "../../lib/money";
 import { USDC_ERC20_DECIMALS, ARC_EXPLORER_BASE } from "../../lib/config";
+import { readUsdcBalance, readNativeBalance } from "../../lib/circle";
+
+const ARC_NATIVE_DECIMALS = 18; // gas only — CLAUDE.md §4.2, never mixed with the 6dp ERC-20
 import { WithdrawSection } from "../../components/WithdrawSection";
 import { LogoutButton } from "../../components/LogoutButton";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "../../lib/auth/creator";
@@ -40,12 +43,25 @@ export default async function DashboardPage() {
   const earningsBySlug: Record<string, bigint> = {};
   let totalEarnings = 0n;
   let priceHistory: PriceHistoryRow[] = [];
+  let walletUsdcBalance: bigint | null = null;
+  let walletNativeBalance: bigint | null = null;
 
   if (creatorId) {
     const db = createServerClient();
     try {
       creator = await getCreator(db, creatorId);
       articles = await listArticlesByCreator(db, creatorId);
+
+      if (creator?.eoa_address) {
+        try {
+          [walletUsdcBalance, walletNativeBalance] = await Promise.all([
+            readUsdcBalance(creator.eoa_address),
+            readNativeBalance(creator.eoa_address),
+          ]);
+        } catch (err) {
+          console.error('[dashboard] wallet balance read failed:', err);
+        }
+      }
 
       // Earnings: sum payment_events per article slug
       const slugs = articles.map((a) => a.slug);
@@ -77,6 +93,14 @@ export default async function DashboardPage() {
 
   const fmt = (atomic: bigint | string | number) =>
     toDisplay(fromBaseUnits(BigInt(String(atomic)), USDC_ERC20_DECIMALS));
+
+  // Native ARC (gas token, 18dp) — plain decimal, never the $-prefixed USDC formatter above.
+  const fmtNative = (value: bigint) => {
+    const factor = 10n ** BigInt(ARC_NATIVE_DECIMALS);
+    const whole = value / factor;
+    const frac = (value % factor).toString().padStart(ARC_NATIVE_DECIMALS, '0').slice(0, 4).replace(/0+$/, '') || '0';
+    return `${whole}.${frac}`;
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -225,6 +249,39 @@ export default async function DashboardPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Wallet — the creator's own UCW address, balances, ArcScan link */}
+        {creator?.eoa_address && (
+          <div className="rounded-xl border px-6 py-5" style={{ border: '1px solid var(--c-border)', background: 'var(--c-surface)' }}>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="font-semibold text-sm">Wallet</div>
+                <a
+                  href={`${ARC_EXPLORER_BASE}/address/${creator.eoa_address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-xs text-muted-foreground underline mt-0.5 inline-block"
+                >
+                  {creator.eoa_address.slice(0, 10)}…{creator.eoa_address.slice(-6)} ↗
+                </a>
+              </div>
+              <div className="flex gap-6">
+                <div className="text-right">
+                  <div className="font-mono text-lg font-bold" style={{ color: 'var(--c-accent)' }}>
+                    {walletUsdcBalance != null ? fmt(walletUsdcBalance) : '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">USDC</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-mono text-lg font-bold">
+                    {walletNativeBalance != null ? fmtNative(walletNativeBalance) : '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">ARC (gas)</div>
+                </div>
+              </div>
             </div>
           </div>
         )}

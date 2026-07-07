@@ -271,16 +271,27 @@ export async function readVaultWithdrawNonce(contentContract: string): Promise<b
   });
 }
 
-/** Current USDC balance held by a ContentVault — this *is* "all earnings" for that
- * piece of content, since x402 settlement pays directly into the vault. */
-export async function readVaultBalance(contentContract: string): Promise<bigint> {
+/** USDC (ERC-20, 6dp) balance of any Arc address. */
+export async function readUsdcBalance(address: string): Promise<bigint> {
   if (isMockCircle || !ARC_RPC_URL) return 0n;
   return makePublicClient().readContract({
     address: USDC_ADDRESS as `0x${string}`,
     abi: ERC20_BALANCE_ABI,
     functionName: "balanceOf",
-    args: [contentContract as `0x${string}`],
+    args: [address as `0x${string}`],
   });
+}
+
+/** Current USDC balance held by a ContentVault — this *is* "all earnings" for that
+ * piece of content, since x402 settlement pays directly into the vault. */
+export async function readVaultBalance(contentContract: string): Promise<bigint> {
+  return readUsdcBalance(contentContract);
+}
+
+/** Native ARC balance (18dp) of any address — gas only, never USDC (CLAUDE.md §4.2). */
+export async function readNativeBalance(address: string): Promise<bigint> {
+  if (isMockCircle || !ARC_RPC_URL) return 0n;
+  return makePublicClient().getBalance({ address: address as `0x${string}` });
 }
 
 export async function readContentPriceAtomic(
