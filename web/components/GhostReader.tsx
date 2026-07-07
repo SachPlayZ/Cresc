@@ -88,9 +88,16 @@ export function GhostReader({ html, articleSlug, site }: GhostReaderProps) {
   }, [articleSlug, site]);
 
   return (
-    <div className="max-w-2xl mx-auto px-6">
+    <div className="max-w-2xl mx-auto px-6" style={{ maxWidth: "min(42rem, 100%)", overflowX: "hidden" }}>
+      <style>{`
+        .cresc-reader-content { overflow-wrap: anywhere; word-break: break-word; }
+        .cresc-reader-content pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; overflow-x: auto; }
+        .cresc-reader-content code { overflow-wrap: anywhere; word-break: break-word; }
+        .cresc-reader-content img, .cresc-reader-content video { max-width: 100%; height: auto; }
+        .cresc-reader-content table { display: block; max-width: 100%; overflow-x: auto; }
+      `}</style>
       <article
-        className="prose prose-neutral dark:prose-invert max-w-none"
+        className="prose prose-neutral dark:prose-invert max-w-none cresc-reader-content"
         dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
     </div>

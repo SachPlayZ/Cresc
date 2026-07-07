@@ -130,7 +130,7 @@ export default async function ReadPage({ searchParams }: PageProps) {
     }
 
     return (
-      <main className="min-h-screen bg-background text-foreground pb-24">
+      <main className="min-h-screen bg-background text-foreground pb-24" style={{ overflowX: "hidden" }}>
         <nav className="flex items-center justify-between px-10 py-4.5 border-b" style={{ borderColor: "var(--c-border-soft)" }}>
           <Link href="/" className="font-heading font-bold text-lg tracking-tight text-foreground no-underline">
             Cresc
