@@ -133,8 +133,10 @@ export class GhostAdminClient {
   }
 
   async getPost(ghostPostId: string): Promise<GhostPost> {
+    // formats=html is required — Ghost only populates the html field when explicitly
+    // asked via `formats`; listing "html" in `fields` alone silently returns null.
     const res = await fetch(
-      `${this.instanceUrl}/ghost/api/admin/posts/${ghostPostId}/?fields=${POST_FIELDS}`,
+      `${this.instanceUrl}/ghost/api/admin/posts/${ghostPostId}/?fields=${POST_FIELDS}&formats=html`,
       { headers: this.authHeaders(), cache: 'no-store' }
     );
     if (!res.ok) {
