@@ -13,6 +13,7 @@ type WithdrawCreator = { id: string; eoa_address: string | null };
 
 const CIRCLE_APP_ID = process.env.NEXT_PUBLIC_CIRCLE_APP_ID ?? "";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_CIRCLE_GOOGLE_CLIENT_ID ?? "";
+const WITHDRAW_PENDING_KEY = "cresc_withdraw_pending";
 
 type Status = 'idle' | 'auth' | 'withdrawing' | 'done' | 'error';
 
@@ -79,6 +80,19 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
     void init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Google login is a full-page redirect (see redirectUri above) — it wipes all React
+  // state, including whatever click started it. onLoginComplete only sets cookies, so
+  // without this, the user has to click "Withdraw all earnings" a second time after
+  // coming back from Google. Resume automatically once a session exists post-redirect.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem(WITHDRAW_PENDING_KEY) !== '1') return;
+    if (!userToken || !encKey) return;
+    localStorage.removeItem(WITHDRAW_PENDING_KEY);
+    void handleWithdrawAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userToken, encKey]);
+
   async function withdrawOneVault(contentContract: string): Promise<{ skipped: boolean; txHash?: string }> {
     const signReqRes = await fetch('/api/withdraw/sign-request', {
       method: 'POST',
@@ -134,6 +148,7 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
     // Re-auth if no session
     if (!userToken || !encKey) {
       setStatus('auth');
+      if (typeof window !== 'undefined') localStorage.setItem(WITHDRAW_PENDING_KEY, '1');
       sdkRef.current?.performLogin('Google' as Parameters<W3SSdk['performLogin']>[0]);
       return;
     }
