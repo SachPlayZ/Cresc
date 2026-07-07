@@ -36,12 +36,13 @@ interface WithdrawSectionProps {
 export function WithdrawSection({ creator, contentContracts }: WithdrawSectionProps) {
   const sdkRef = useRef<W3SSdk | null>(null);
   const [cookies, setCookie] = useCookies([
-    'circle_device_token', 'circle_device_enc_key',
+    'circle_device_id', 'circle_device_token', 'circle_device_enc_key',
     'circle_user_token', 'circle_enc_key',
   ]);
 
   const userToken = cookies.circle_user_token as string | undefined;
   const encKey = cookies.circle_enc_key as string | undefined;
+  const deviceId = cookies.circle_device_id as string | undefined;
   const deviceToken = cookies.circle_device_token as string | undefined;
   const deviceEncKey = cookies.circle_device_enc_key as string | undefined;
 
@@ -75,7 +76,10 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
         onLoginComplete
       );
       sdkRef.current = sdk;
-      await sdk.getDeviceId();
+      if (!deviceId) {
+        const id = await sdk.getDeviceId();
+        setCookie('circle_device_id', id, { path: '/' });
+      }
     };
     void init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -140,6 +144,44 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
     return { skipped: false, txHash: prep.txHash };
   }
 
+  // Mints a device token if this browser doesn't have one yet, then triggers the Google
+  // OAuth redirect. Circle's backend rejects a login attempt with no/invalid device
+  // token (error 155101), which otherwise looks exactly like "asks to sign in again
+  // right after signing in" — the redirect completes but no session is ever granted.
+  async function triggerGoogleLogin() {
+    let dt = deviceToken;
+    let dek = deviceEncKey;
+    if (!dt || !dek) {
+      if (!deviceId) throw new Error('Still initializing — try again in a moment.');
+      const res = await fetch('/api/ucw/device-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId }),
+      });
+      const data = await res.json() as { deviceToken?: string; deviceEncryptionKey?: string; error?: string };
+      if (!res.ok || !data.deviceToken || !data.deviceEncryptionKey) {
+        throw new Error(data.error ?? 'Failed to prepare login');
+      }
+      dt = data.deviceToken;
+      dek = data.deviceEncryptionKey;
+      setCookie('circle_device_token', dt, { path: '/' });
+      setCookie('circle_device_enc_key', dek, { path: '/' });
+    }
+
+    const sdk = sdkRef.current;
+    if (!sdk) throw new Error('SDK not ready — try again in a moment.');
+    sdk.updateConfigs({
+      appSettings: { appId: CIRCLE_APP_ID },
+      loginConfigs: {
+        deviceToken: dt,
+        deviceEncryptionKey: dek,
+        google: { clientId: GOOGLE_CLIENT_ID, redirectUri: `${window.location.origin}/dashboard`, selectAccountPrompt: true },
+      },
+    });
+    localStorage.setItem(WITHDRAW_PENDING_KEY, '1');
+    sdk.performLogin('Google' as Parameters<W3SSdk['performLogin']>[0]);
+  }
+
   async function handleWithdrawAll() {
     setErrorMsg(null);
 
@@ -148,8 +190,12 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
     // Re-auth if no session
     if (!userToken || !encKey) {
       setStatus('auth');
-      if (typeof window !== 'undefined') localStorage.setItem(WITHDRAW_PENDING_KEY, '1');
-      sdkRef.current?.performLogin('Google' as Parameters<W3SSdk['performLogin']>[0]);
+      try {
+        await triggerGoogleLogin();
+      } catch (e) {
+        setErrorMsg(describeError(e));
+        setStatus('error');
+      }
       return;
     }
 
