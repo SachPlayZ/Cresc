@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { showTxConfirmedToast } from "@/lib/toast-tx";
 
 interface TipButtonProps {
   creatorId: string;
@@ -43,10 +44,14 @@ export function TipButton({ creatorId, contentContract, creatorName, defaultAmou
           amount_atomic: selected,
         }),
       });
-      const data = await res.json() as { decision?: string; reason?: string; error?: string };
+      const data = await res.json() as {
+        decision?: string; reason?: string; error?: string;
+        payment?: { tx: string; amount_atomic: string; settled_at: string };
+      };
 
       if (data.decision === 'paid') {
         setState('paid');
+        if (data.payment) showTxConfirmedToast(data.payment.amount_atomic, data.payment.tx);
         return;
       }
       if (data.decision === 'declined') {

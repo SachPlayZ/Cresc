@@ -9,7 +9,7 @@ import { createServerClient } from "../../lib/db";
 import { listArticlesByCreator, getCreator } from "../../lib/repo/index";
 import type { Article, Creator } from "../../lib/repo/types";
 import { fromBaseUnits, toDisplay } from "../../lib/money";
-import { USDC_ERC20_DECIMALS } from "../../lib/config";
+import { USDC_ERC20_DECIMALS, ARC_EXPLORER_BASE } from "../../lib/config";
 import { WithdrawSection } from "../../components/WithdrawSection";
 import { LogoutButton } from "../../components/LogoutButton";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "../../lib/auth/creator";
@@ -24,10 +24,22 @@ export default async function DashboardPage() {
   const creatorId = sessionCreatorId ?? DEV_CREATOR_ID;
   if (!creatorId) redirect("/login");
 
+  type PriceHistoryRow = {
+    id: string;
+    article_slug: string;
+    old_price_atomic: string | number | null;
+    new_price_atomic: string | number | null;
+    reason: { llm_move_pct?: number; llm_reason?: string; demand?: number } | null;
+    reason_cid: string | null;
+    tune_tx: string | null;
+    ts: string;
+  };
+
   let creator: Creator | null = null;
   let articles: Article[] = [];
   const earningsBySlug: Record<string, bigint> = {};
   let totalEarnings = 0n;
+  let priceHistory: PriceHistoryRow[] = [];
 
   if (creatorId) {
     const db = createServerClient();
@@ -49,6 +61,14 @@ export default async function DashboardPage() {
           earningsBySlug[slug] = (earningsBySlug[slug] ?? 0n) + amt;
           totalEarnings += amt;
         }
+
+        const { data: history } = await db
+          .from('price_history')
+          .select('id, article_slug, old_price_atomic, new_price_atomic, reason, reason_cid, tune_tx, ts')
+          .in('article_slug', slugs)
+          .order('ts', { ascending: false })
+          .limit(20);
+        priceHistory = (history ?? []) as PriceHistoryRow[];
       }
     } catch (err) {
       console.error('[dashboard]', err);
@@ -144,6 +164,67 @@ export default async function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Price history — AI pricing decisions, transparent + verifiable */}
+        {priceHistory.length > 0 && (
+          <div className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest px-1">
+              Price history
+            </div>
+            <div className="rounded-xl border overflow-hidden divide-y" style={{ border: '1px solid var(--c-border)', borderColor: 'var(--c-border-soft)' }}>
+              {priceHistory.map((row) => {
+                const titleForSlug = articles.find((a) => a.slug === row.article_slug)?.title || row.article_slug;
+                const movePct = row.reason?.llm_move_pct;
+                return (
+                  <div key={row.id} className="px-4 py-3" style={{ background: 'var(--c-surface)' }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm truncate">{titleForSlug}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {row.old_price_atomic != null && row.new_price_atomic != null && (
+                            <>{fmt(row.old_price_atomic)} → {fmt(row.new_price_atomic)}</>
+                          )}
+                          {typeof movePct === 'number' && (
+                            <span className="ml-1.5 font-mono">({movePct > 0 ? '+' : ''}{movePct.toFixed(2)}%)</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground shrink-0">
+                        {new Date(row.ts).toLocaleString()}
+                      </div>
+                    </div>
+                    {row.reason?.llm_reason && (
+                      <p className="text-xs text-muted-foreground mt-1.5 italic">&ldquo;{row.reason.llm_reason}&rdquo;</p>
+                    )}
+                    <div className="flex items-center gap-3 mt-2 font-mono text-xs">
+                      {row.tune_tx && (
+                        <a
+                          href={`${ARC_EXPLORER_BASE}/tx/${row.tune_tx}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                          style={{ color: 'var(--c-accent)' }}
+                        >
+                          tx ↗
+                        </a>
+                      )}
+                      {row.reason_cid && (
+                        <a
+                          href={`https://gateway.pinata.cloud/ipfs/${row.reason_cid}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline text-muted-foreground"
+                        >
+                          reasoning (IPFS) ↗
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

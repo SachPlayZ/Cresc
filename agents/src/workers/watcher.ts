@@ -23,6 +23,7 @@ import {
   isGroqMockMode,
 } from '../config.js';
 import { tuneContentPrice } from './content-contracts.js';
+import { pinJsonToIpfs } from '../ipfs.js';
 
 // Must match ContentVault.PRICE_MAX_ATOMIC (contracts/src/ContentVault.sol) — the contract
 // ceiling always wins. If PRICE_MAX_ATOMIC env is set above this, tunePrice would revert on
@@ -220,6 +221,17 @@ async function repriceArticle(
     llm_reason: llmReason,
   };
   const reasonHash = keccak256(toHex(JSON.stringify(reason)));
+
+  // Pin reasoning to IPFS BEFORE tuning on-chain — the on-chain PriceTuned event's
+  // reasonHash is a commitment to this exact content, so the pin must exist first for
+  // the two to be verifiable together. Non-fatal: a pinning outage must not block pricing.
+  let reasonCid: string | null = null;
+  try {
+    reasonCid = await pinJsonToIpfs(reason, `cresc-price-reason-${article.slug}-${Date.now()}`);
+  } catch (err) {
+    console.error(`[pricing] IPFS pin failed for ${article.slug} (continuing without CID):`, err);
+  }
+
   if (article.content_contract) {
     try {
       tuneTx = await tuneContentPrice(article.content_contract, BigInt(newPrice), reasonHash);
@@ -244,11 +256,12 @@ async function repriceArticle(
     price_atomic: newPrice,
     reason,
     reason_hash: reasonHash,
+    reason_cid: reasonCid,
     tune_tx: tuneTx,
   });
 
   console.log(
-	    `[pricing] ${article.slug}: ${prev} → ${newPrice} tx=${tuneTx ?? 'mock/cache'} (demand=${demand.toFixed(3)}, move_pct=${movePct.toFixed(2)}, reason="${llmReason}")`
+	    `[pricing] ${article.slug}: ${prev} → ${newPrice} tx=${tuneTx ?? 'mock/cache'} cid=${reasonCid ?? 'unpinned'} (demand=${demand.toFixed(3)}, move_pct=${movePct.toFixed(2)}, reason="${llmReason}")`
   );
 }
 

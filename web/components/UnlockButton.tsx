@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { showTxConfirmedToast } from "@/lib/toast-tx";
 
 interface GhostUnlockButtonProps {
   slug: string;
@@ -34,11 +35,19 @@ export function GhostUnlockButton({ slug, site, priceDisplay }: GhostUnlockButto
         });
         const data = await res.json() as {
           decision?: string; unlock_token?: string; reason?: string; error?: string;
+          payment?: { tx: string; amount_atomic: string; settled_at: string };
         };
 
         if (data.decision === 'paid' && data.unlock_token) {
-          window.location.href =
+          const target =
             `/read?slug=${encodeURIComponent(slug)}&site=${encodeURIComponent(site)}&unlock_token=${encodeURIComponent(data.unlock_token)}`;
+          if (data.payment) {
+            showTxConfirmedToast(data.payment.amount_atomic, data.payment.tx);
+            // Brief delay so the toast is actually visible before the page navigates away.
+            setTimeout(() => { window.location.href = target; }, 1400);
+          } else {
+            window.location.href = target;
+          }
           return;
         }
         if (data.decision === 'declined') {

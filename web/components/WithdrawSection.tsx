@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { W3SSdk } from "@circle-fin/w3s-pw-web-sdk";
 import { fromDisplay } from "../lib/money";
+import { showTxConfirmedToast } from "../lib/toast-tx";
 
 // Deliberately narrow — never accept the full Creator row here. This is a client
 // component, so any prop passed to it gets serialized into the page payload sent to
@@ -159,6 +160,7 @@ export function WithdrawSection({ creator }: { creator: WithdrawCreator }) {
       if (!prepRes.ok || prep.error) throw new Error(prep.error ?? 'Prepare failed');
       setTxHash(prep.txHash!);
       setStatus('done');
+      showTxConfirmedToast(amountAtomic, prep.txHash!);
     } catch (e) {
       setErrorMsg(String(e));
       setStatus('error');

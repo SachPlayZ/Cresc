@@ -49,6 +49,11 @@ export const GROQ_MODEL: string =
   getEnv('GROQ_MODEL') ?? 'llama-3.3-70b-versatile';
 export const isGroqMockMode: boolean = !GROQ_API_KEY;
 
+// Pinata (IPFS pinning for price-tune reasoning) — optional; pinning is skipped
+// (reason_cid stays null) if unset, same graceful-degradation pattern as Groq/payment
+// mock mode. Get a JWT from https://app.pinata.cloud/developers/api-keys.
+export const PINATA_JWT: string = getEnv('PINATA_JWT') ?? '';
+
 // Internal HMAC (Vercel↔EC2)
 export const INTERNAL_HMAC_SECRET: string = getEnv('INTERNAL_HMAC_SECRET') ?? '';
 
@@ -85,6 +90,9 @@ export function validateAgentConfig(): void {
   if (!APP_BASE_URL) throw new Error('[config] Missing APP_BASE_URL (Vercel URL for tip x402 endpoint)');
   if (isGroqMockMode) {
     console.warn('[config] GROQ_API_KEY not set — Groq gate scores use deterministic stubs');
+  }
+  if (!PINATA_JWT) {
+    console.warn('[config] PINATA_JWT not set — price-tune reasoning will not be pinned to IPFS');
   }
   if (isPaymentMockMode) {
     console.warn('[config] ARC_RPC_URL or BUYER_PRIVATE_KEY missing — payment path returns deterministic stubs');
