@@ -110,7 +110,7 @@ HTTP, not a queue. Reader Agent runs Express; Vercel calls synchronously. No pub
 **Reader Agent — four gates, short-circuit on first hard fail:**
 - **Gate 1 Budget (deterministic, no LLM):** fail if `spent_today + price > daily_budget` OR `spent_session + price > session_budget`. On fail return `declined / reason: "budget_exceeded"` before any LLM call.
 - **Gates 2–4 Quality / Interest / Confidence (one Groq call):** strict-JSON output `{ quality: 0-1, interest: 0-1, confidence: 0-100, reason }`, no prose. Inputs: article `title`/`excerpt`/`topics`/`price_atomic` + reader's last ~20 telemetry rows summarized to topics + avg dwell.
-- **Decision rule (deterministic, after LLM):** pay IFF `budget_ok AND quality ≥ QUALITY_MIN (0.5) AND interest ≥ INTEREST_MIN (0.5) AND confidence ≥ CONFIDENCE_MIN (80)`. Thresholds env-configurable.
+- **Decision rule (deterministic, after LLM):** pay IFF `budget_ok AND quality ≥ QUALITY_MIN (0.3) AND interest ≥ INTEREST_MIN (0.3) AND confidence ≥ CONFIDENCE_MIN (30)`. Thresholds env-configurable.
 - **Mock mode:** if `GROQ_API_KEY` unset, return deterministic stubs (`quality 0.7, interest 0.7, confidence 85`) so the pay loop is testable without Groq.
 
 **Watcher — hourly per active article, on AUDITED counts only:**

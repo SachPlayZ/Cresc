@@ -59,9 +59,9 @@ export const APP_BASE_URL: string = getEnv('APP_BASE_URL') ?? getEnv('NEXT_PUBLI
 export const PORT: number = parseNumber('PORT', 4000);
 
 // Reader Agent gate thresholds
-export const QUALITY_MIN: number = parseNumber('QUALITY_MIN', 0.5);
-export const INTEREST_MIN: number = parseNumber('INTEREST_MIN', 0.5);
-export const CONFIDENCE_MIN: number = parseNumber('CONFIDENCE_MIN', 80);
+export const QUALITY_MIN: number = parseNumber('QUALITY_MIN', 0.3);
+export const INTEREST_MIN: number = parseNumber('INTEREST_MIN', 0.3);
+export const CONFIDENCE_MIN: number = parseNumber('CONFIDENCE_MIN', 30);
 
 // Watcher tuning
 export const PRICE_MIN_ATOMIC: number = parseNumber('PRICE_MIN_ATOMIC', 10_000);   // $0.01
