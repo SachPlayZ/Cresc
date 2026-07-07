@@ -12,7 +12,9 @@
 [![Foundry](https://img.shields.io/badge/Foundry-Solidity-black?style=flat-square)](https://getfoundry.sh)
 [![Supabase](https://img.shields.io/badge/Supabase-DB-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com)
 
-[Architecture](#architecture) · [Payment flow](#payment-flow) · [Contracts](#contracts) · [Agents](#agents) · [Setup](#setup) · [Ghost quick-start](#ghost-quick-start)
+**[🌐 Live App](https://cresc.vercel.app)** · **[▶️ YouTube Demo](https://youtu.be/pduN69BrQxI)** · **[𝕏 @CrescOnChain](https://x.com/CrescOnChain)**
+
+[Architecture](#architecture) · [Payment flow](#payment-flow) · [Deployed contracts](#deployed-contracts) · [Agents](#agents) · [Setup](#setup) · [Ghost quick-start](#ghost-quick-start)
 
 </div>
 
@@ -27,7 +29,7 @@ Creator revenue is **not** custodied by Cresc. Each piece of content gets its ow
 Two always-on agents drive the loop:
 
 - **Reader Agent** — a shared, budget-constrained EOA that reads an article's price, weighs quality/interest/confidence via an LLM call, and decides whether to pay — entirely autonomously, no human in the request path.
-- **Watcher** — repriced every article hourly against 7-day rolling engagement medians (views, dwell time, tips), with a damped step size so prices drift rather than jump.
+- **Watcher** — reprices every article hourly. Demand signals (views, dwell, tips, normalized against 7-day rolling medians) feed one LLM judgment per article; the returned move is hard-clamped to ±5%/hr, and the full reasoning JSON is pinned to IPFS with its keccak256 hash committed onchain in the `PriceTuned` event — every price move is independently verifiable.
 
 A **Creator Audit Agent** screens raw telemetry for bot/spam patterns before the Watcher ever sees it, so pricing reacts to real readers, not noise.
 
@@ -72,7 +74,7 @@ Reader → POST /api/unlock/:slug (Vercel)
 
 The **Reader Agent** short-circuits on the first hard fail across four gates:
 
-1. **Budget** (deterministic) — reject if daily/session spend would be exceeded.
+1. **Budget** (deterministic) — reject if daily/session spend would be exceeded. No LLM call is made for a budget fail.
 2. **Quality**, **Interest**, **Confidence** — one Groq call returns strict JSON scores against the article's title/excerpt/topics and the reader's recent telemetry. Pay only if all three clear their thresholds.
 
 Runs in a **deterministic mock mode** with no `GROQ_API_KEY` set, so the pay loop is testable without burning LLM tokens.
@@ -81,9 +83,26 @@ Runs in a **deterministic mock mode** with no `GROQ_API_KEY` set, so the pay loo
 
 ---
 
-## Contracts
+## Deployed contracts
 
-`contracts/` (Foundry, Solidity 0.8.34) — `forge test` / `forge build` from the repo root.
+All contracts live on **Arc Testnet** (chain id `5042002`) — browse them on [Arcscan](https://testnet.arcscan.app).
+
+| Contract | Address | Role |
+|----------|---------|------|
+| `ContentFactory` | [`0x2727656c29471415c230C67fb7f6200aB0536EAD`](https://testnet.arcscan.app/address/0x2727656c29471415c230C67fb7f6200aB0536EAD) | Deploys one `ContentVault` per Ghost post ([deploy tx](https://testnet.arcscan.app/tx/0xa8dbd8546cfc917e13720d56e5a541448b10c0679c0cf32a4aaabcade0a497b9)) |
+| `ContentVault` (per article) | deployed by the factory — one per post, look up any vault via the factory's read methods | Holds one article's USDC revenue; exposes `tunePrice`, `withdraw`, `withdrawAll`, `withdrawSigned` |
+
+Circle protocol contracts Cresc settles against on Arc Testnet:
+
+| Contract | Address | Role |
+|----------|---------|------|
+| USDC (ERC-20) | [`0x3600000000000000000000000000000000000000`](https://testnet.arcscan.app/address/0x3600000000000000000000000000000000000000) | Settlement asset — 6-decimal ERC-20 interface |
+| Gateway Wallet | [`0x0077777d7EBA4688BDeF3E311b846F25870A19B9`](https://testnet.arcscan.app/address/0x0077777d7EBA4688BDeF3E311b846F25870A19B9) | EIP-3009 `verifyingContract` for batched x402 payments |
+| Gateway Minter | [`0x0022222ABE238Cc2C7Bb1f21003F0a260052475B`](https://testnet.arcscan.app/address/0x0022222ABE238Cc2C7Bb1f21003F0a260052475B) | Gateway withdraw / mint |
+
+### Contract design
+
+`contracts/` (Foundry) — `forge test` / `forge build` from the repo root.
 
 | Contract | Role |
 |----------|------|
@@ -117,7 +136,7 @@ forge script contracts/script/DeployContentFactory.s.sol \
 | `POST /agent/tip` | Budget-gated tip to a creator |
 | `POST /agent/withdraw-content` | Relays a creator-signed `withdrawSigned` call |
 | `GET /healthz` | Gateway balance, last payment, LLM reachability — unauthenticated, for external monitors |
-| Watcher | Hourly `tunePrice` per active article from audited telemetry |
+| Watcher | Hourly `tunePrice` per active article from audited telemetry, reasoning pinned to IPFS |
 | Creator Audit Agent | Pre-filters bot/spam telemetry before the Watcher reads it |
 
 > [!IMPORTANT]
@@ -133,11 +152,11 @@ Postgres via Supabase. Migrations in `agents/supabase/migrations/`, applied with
 |-------|---------|
 | `creators` | Ghost connection, Circle wallet binding |
 | `readers` | Budgets and spend counters for the shared buyer EOA's sessions |
-| `articles` | Slug, `content_contract`, cached price, Ghost post metadata |
+| `articles` | Slug, `content_contract`, cached price, Ghost post metadata, per-article monetization toggle |
 | `telemetry` / `telemetry_audited` | Raw and bot-filtered engagement events — Watcher reads only the audited table |
 | `payment_events` | Append-only settlement log (public read, service-role insert) |
 | `withdrawals` | Creator payout requests and their onchain status |
-| `price_history` | Every `tunePrice` decision with its normalized signal inputs |
+| `price_history` | Every `tunePrice` decision with its normalized inputs, IPFS reason CID, and tune tx hash |
 
 > [!NOTE]
 > Money is stored as atomic 6-decimal USDC integers end to end (`$0.05 = 50000`) — never a float, never dollars. See `web/lib/money.ts` / `agents/src/money.ts`.
@@ -183,7 +202,7 @@ forge script contracts/script/DeployContentFactory.s.sol \
   --rpc-url "$ARC_RPC_URL" --account <keystore-account> --sender <address> --broadcast
 ```
 
-Set the resulting address as `CONTENT_FACTORY_ADDRESS` in both `.env.local` files.
+Set the resulting address as `CONTENT_FACTORY_ADDRESS` in both `.env.local` files (the current testnet deployment is [`0x2727…6EAD`](https://testnet.arcscan.app/address/0x2727656c29471415c230C67fb7f6200aB0536EAD)).
 
 ### 4. Apply migrations
 
@@ -214,8 +233,8 @@ Open [http://localhost:3000](http://localhost:3000).
 2. Enter a display name, connect a Circle wallet, then your Ghost instance URL and Admin API key.
 3. Cresc syncs your published posts and deploys a `ContentVault` for each.
 4. Paste the generated webhook URL + secret into Ghost Admin → Settings → Webhooks (Post published / updated / deleted).
-5. Paste the `<script>` snippet into Ghost Admin → Settings → Code Injection → Site Footer.
-6. Every published post now has a live paywall; new posts sync automatically via the webhook.
+5. Paste the `<script>` snippet into Ghost Admin → Settings → Code Injection → **Site Header** (the header slot lets the snippet cloak paid content before first paint — a footer script would flash the full article).
+6. Every published post now has a live paywall; new posts sync automatically via the webhook. Toggle monetization per article from the dashboard to serve any post free.
 
 ---
 
@@ -230,6 +249,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `agents/src/workers/watcher.ts` | Hourly repricing against audited telemetry |
 | `agents/src/workers/audit.ts` | Bot/spam telemetry pre-filter + LLM outlier judgment |
 | `agents/src/workers/content-contracts.ts` | viem client for factory/vault reads and writes |
+| `agents/src/ipfs.ts` | Pins Watcher pricing reasons to IPFS (Pinata) |
 | `web/app/api/x402/[slug]/route.ts` | x402 seller route: verify, settle, mint `unlock_token` |
 | `web/app/api/withdraw/sign-request/route.ts` | Builds the EIP-712 payload for Circle UCW to sign |
 | `web/lib/circle/index.ts` | Circle Gateway + vault read helpers |
