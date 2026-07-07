@@ -17,6 +17,7 @@ export type Article = {
   metadata_hash: string | null;
   factory_tx: string | null;
   active: boolean;
+  monetization_enabled: boolean;
   ghost_post_id: string | null;
   ghost_instance_url: string | null;
   created_at: string;

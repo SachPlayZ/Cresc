@@ -9,7 +9,7 @@ export type { PublicCreator } from './creators';
 // New architecture repos
 export {
   getArticleBySlug, listArticlesByCreator, upsertGhostArticle,
-  updateArticlePrice, listActiveArticles,
+  updateArticlePrice, listActiveArticles, setArticleMonetization,
 } from './articles';
 
 export { getReader, ensureReader, recordReaderSpend } from './readers';

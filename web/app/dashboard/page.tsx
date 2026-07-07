@@ -15,6 +15,7 @@ import { readUsdcBalance, readNativeBalance } from "../../lib/circle";
 const ARC_NATIVE_DECIMALS = 18; // gas only — CLAUDE.md §4.2, never mixed with the 6dp ERC-20
 import { WithdrawSection } from "../../components/WithdrawSection";
 import { LogoutButton } from "../../components/LogoutButton";
+import { MonetizationToggle } from "../../components/MonetizationToggle";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "../../lib/auth/creator";
 
 export const metadata: Metadata = { title: "Dashboard — Cresc" };
@@ -164,6 +165,7 @@ export default async function DashboardPage() {
                     <th className="text-left px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Article</th>
                     <th className="text-right px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Current price</th>
                     <th className="text-right px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Earned</th>
+                    <th className="text-right px-4 py-2.5 font-mono text-xs text-muted-foreground font-normal">Monetization</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -183,6 +185,11 @@ export default async function DashboardPage() {
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm">
                         {fmt(earningsBySlug[article.slug] ?? 0n)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end">
+                          <MonetizationToggle slug={article.slug} initialEnabled={article.monetization_enabled !== false} />
+                        </div>
                       </td>
                     </tr>
                   ))}

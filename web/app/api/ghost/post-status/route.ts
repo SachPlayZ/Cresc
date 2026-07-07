@@ -28,13 +28,13 @@ export async function GET(req: NextRequest) {
     // Query articles table first (new architecture)
     const { data: article } = await db
       .from('articles')
-      .select('slug, current_price_atomic, content_contract')
+      .select('slug, current_price_atomic, content_contract, monetization_enabled')
       .eq('creator_id', site)
       .eq('slug', slug)
       .eq('active', true)
       .single();
 
-    if (article) {
+    if (article && article.monetization_enabled) {
       const price = fromBaseUnits(BigInt(String(article.current_price_atomic)), USDC_ERC20_DECIMALS);
       return NextResponse.json(
         { paywalled: true, slug: article.slug, priceDisplay: toDisplay(price), contentContract: article.content_contract },

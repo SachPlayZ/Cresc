@@ -150,7 +150,7 @@ Migrations live in `agents/supabase/migrations/` — apply with `npx supabase db
 
 - `creators` (user_id, circle_wallet_id, eoa_address, ghost_url, ghost_key_enc)
 - `readers` (user_id, daily_budget_atomic bigint, session_budget_atomic bigint, spent_today_atomic bigint, spent_session_atomic bigint, session_reset_at)
-- `articles` (slug, creator_id, base_price_atomic bigint, current_price_atomic bigint, ghost_post_id, topics text[])
+- `articles` (slug, creator_id, base_price_atomic bigint, current_price_atomic bigint, ghost_post_id, topics text[], monetization_enabled bool default true — creator-toggleable from the dashboard; when false, the article is served free: `/api/ghost/post-status` reports `paywalled: false` and `/read` skips the payment gate entirely regardless of `unlock_token`)
 - `telemetry` (article_id, reader_id, event_type, dwell_ms, ip_hash, ts)
 - `telemetry_audited` (article_slug, window_start, views, avg_dwell_ms, tips_atomic, authentic_fraction) — Watcher reads this
 - `payment_events` (endpoint, payer, amount_usdc text [atomic string], network, gateway_tx, reader_id, article_slug, request_id, raw) — append-only, RLS

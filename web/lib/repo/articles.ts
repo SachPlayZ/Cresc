@@ -95,6 +95,20 @@ export async function updateArticleContract(
   if (error) throw error;
 }
 
+export async function setArticleMonetization(
+  db: SupabaseClient,
+  creatorId: string,
+  slug: string,
+  enabled: boolean
+): Promise<void> {
+  const { error } = await db
+    .from('articles')
+    .update({ monetization_enabled: enabled, updated_at: new Date().toISOString() })
+    .eq('slug', slug)
+    .eq('creator_id', creatorId);
+  if (error) throw error;
+}
+
 export async function listActiveArticles(db: SupabaseClient): Promise<Article[]> {
   const { data, error } = await db
     .from('articles')

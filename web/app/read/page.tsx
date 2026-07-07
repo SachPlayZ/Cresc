@@ -88,9 +88,11 @@ export default async function ReadPage({ searchParams }: PageProps) {
     );
   }
 
-  // Post-unlock: token present → validate then serve content
-  if (params.unlock_token) {
-    if (!validateUnlockToken(params.unlock_token, site, slug)) {
+  const monetizationEnabled = article.monetization_enabled !== false;
+
+  // Post-unlock (or monetization turned off entirely — nothing to gate): serve content.
+  if (params.unlock_token || !monetizationEnabled) {
+    if (monetizationEnabled && !validateUnlockToken(params.unlock_token!, site, slug)) {
       redirect(`/read?slug=${encodeURIComponent(slug)}&site=${encodeURIComponent(site)}`);
     }
 
@@ -137,7 +139,7 @@ export default async function ReadPage({ searchParams }: PageProps) {
           </Link>
           <div className="flex items-center gap-2 font-mono text-xs px-3 py-1.5 rounded-lg border" style={{ color: "var(--c-accent)", background: "var(--c-surface)", border: "1px solid var(--c-border)" }}>
             <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "var(--c-accent)" }} />
-            {priceDisplay} · settled on Arc
+            {monetizationEnabled ? `${priceDisplay} · settled on Arc` : "Free"}
           </div>
         </nav>
 
@@ -155,7 +157,7 @@ export default async function ReadPage({ searchParams }: PageProps) {
           <div className="flex items-center gap-2 font-sans text-sm text-muted-foreground mb-10">
             <span>by {(article.creators as { display_name: string }).display_name}</span>
             <span>·</span>
-            <span>paid {priceDisplay}</span>
+            <span>{monetizationEnabled ? `paid ${priceDisplay}` : "free"}</span>
           </div>
         </div>
 
