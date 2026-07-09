@@ -177,7 +177,7 @@ contract ContentFactoryTest {
         usdc.mint(address(vault), 100_000);
 
         VM.prank(CREATOR);
-        VM.expectRevert(ContentVault.ContentVault__InsufficientBalance.selector);
+        VM.expectRevert(ContentVault.ContentVault__InvalidAmount.selector);
         vault.withdraw(DESTINATION, 0);
     }
 
@@ -246,6 +246,24 @@ contract ContentFactoryTest {
         vault.withdrawSigned(DESTINATION, 10_000, 0, v, r, s);
     }
 
+    function testDirectWithdrawInvalidatesOutstandingSignedMessage() external {
+        ContentVault vault = _createVault();
+        usdc.mint(address(vault), 100_000);
+
+        // Creator signs a Withdraw message for the relayer, then changes their mind and
+        // withdraws directly. The old signature (nonce 0) must no longer be submittable —
+        // otherwise it stays valid forever regardless of what the creator does directly.
+        (uint8 v, bytes32 r, bytes32 s) = _signWithdraw(vault, DESTINATION, 40_000, 0);
+
+        VM.prank(CREATOR);
+        vault.withdraw(DESTINATION, 10_000);
+        assert(vault.withdrawNonce() == 1);
+
+        VM.prank(TUNER);
+        VM.expectRevert(ContentVault.ContentVault__InvalidNonce.selector);
+        vault.withdrawSigned(DESTINATION, 40_000, 0, v, r, s);
+    }
+
     function testWithdrawSignedRejectsNonRelayerCaller() external {
         ContentVault vault = _createVault();
         usdc.mint(address(vault), 100_000);
@@ -308,12 +326,24 @@ contract ContentFactoryTest {
         assert(vault.priceAtomic() == 70_000);
     }
 
-    function testConstructorRevertsOnInvalidInitialPrice() external {
+    function testConstructorRevertsOnZeroCreator() external {
         bytes32 contentId = keccak256("creator-b:post-b");
 
         VM.prank(OWNER);
         VM.expectRevert(ContentFactory.ContentFactory__ZeroAddress.selector);
         factory.createContent(contentId, "creator-b", address(0), 50_000, "uri", bytes32(0), TUNER);
+    }
+
+    function testConstructorRevertsOnInvalidInitialPrice() external {
+        bytes32 tooLow = keccak256("creator-c:post-low");
+        VM.prank(OWNER);
+        VM.expectRevert(ContentVault.ContentVault__InvalidPrice.selector);
+        factory.createContent(tooLow, "creator-c", CREATOR, 0, "uri", bytes32(0), TUNER);
+
+        bytes32 tooHigh = keccak256("creator-c:post-high");
+        VM.prank(OWNER);
+        VM.expectRevert(ContentVault.ContentVault__InvalidPrice.selector);
+        factory.createContent(tooHigh, "creator-c", CREATOR, 1_000_001, "uri", bytes32(0), TUNER);
     }
 
     function _createVault() private returns (ContentVault vault) {

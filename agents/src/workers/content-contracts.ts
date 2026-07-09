@@ -91,6 +91,13 @@ const vaultAbi = [
     inputs: [],
     outputs: [{ type: 'uint256' }],
   },
+  {
+    name: 'totalWithdrawnAtomic',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
 ] as const;
 
 const arcTestnetChain = defineChain({
@@ -309,18 +316,48 @@ export async function readWithdrawNonce(contentContract: string): Promise<bigint
   });
 }
 
+// Cumulative atomic USDC ever withdrawn (direct + relayed). The deployed ContentVault
+// bytecode doesn't bump withdrawNonce on a *direct* creator withdrawal, so a signed
+// relay message technically stays valid across one — this value is the off-chain
+// substitute check (see withdrawFromContent's drift guard below).
+export async function readTotalWithdrawn(contentContract: string): Promise<bigint> {
+  return getPublicClient().readContract({
+    address: contentContract as `0x${string}`,
+    abi: vaultAbi,
+    functionName: 'totalWithdrawnAtomic',
+  });
+}
+
 // Relays a creator-signed withdrawal (EIP-712 `Withdraw(address to,uint256 amountAtomic,uint256 nonce)`
 // over the vault's own domain separator). The tuner key only relays here — it cannot originate an
 // arbitrary destination/amount without a matching unused signature from the vault's `creator`.
+//
+// expectedTotalWithdrawnAtomic (optional): the vault's totalWithdrawnAtomic() at the moment
+// the creator signed, as reported by /api/withdraw/sign-request. Re-checked live, right here,
+// immediately before the irreversible on-chain call — if it has moved, some withdrawal
+// (direct or relayed) happened since signing and this request is rejected rather than
+// relayed. This is the off-chain substitute for the contract not invalidating a signature's
+// nonce on a direct withdraw.
 export async function withdrawFromContent(
   contentContract: string,
   to: string,
   amountAtomic: bigint,
   nonce: bigint,
-  signature: { v: number; r: `0x${string}`; s: `0x${string}` }
+  signature: { v: number; r: `0x${string}`; s: `0x${string}` },
+  expectedTotalWithdrawnAtomic?: bigint
 ): Promise<string | null> {
   const account = getTunerAccount();
   if (!ARC_RPC_URL || !account || !CONTENT_TUNER_PRIVATE_KEY) return null;
+
+  if (expectedTotalWithdrawnAtomic !== undefined) {
+    const currentTotalWithdrawn = await readTotalWithdrawn(contentContract);
+    if (currentTotalWithdrawn !== expectedTotalWithdrawnAtomic) {
+      throw new Error(
+        `[content] vault state changed since signing (totalWithdrawnAtomic expected=${expectedTotalWithdrawnAtomic} actual=${currentTotalWithdrawn}) — refusing stale signature, ask creator to re-sign`
+      );
+    }
+  }
+
   const walletClient = createWalletClient({ account, chain: arcTestnetChain, transport: http(ARC_RPC_URL) });
   const txHash = await walletClient.writeContract({
     address: contentContract as `0x${string}`,

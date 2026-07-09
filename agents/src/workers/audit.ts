@@ -126,9 +126,6 @@ async function auditArticle(
     // Drop bounces
     if (row.dwell_ms < MIN_DWELL_MS) continue;
 
-    // Self-tip / self-view: skip views from the creator's own wallet
-    if (creatorEoa && row.reader_id.toLowerCase() === creatorEoa.toLowerCase()) continue;
-
     // Per-hour rate limit per reader
     const hourBucket = Math.floor(new Date(row.ts).getTime() / 3_600_000);
     const key = `${row.reader_id}:${hourBucket}`;
@@ -187,20 +184,25 @@ async function auditArticle(
     auditReason = groqResult.reason;
   }
 
-  // --- Tip totals: only count tips, not unlock payments ---
+  // --- Tip totals: only count tips, not unlock payments, and exclude self-tips ---
   let tipsAtomic = 0;
   if (contentContract) {
     const { data: tipPayments } = await db
       .from('payment_events')
-      .select('amount_usdc')
+      .select('amount_usdc, payer')
       .eq('content_contract', contentContract)
       .like('endpoint', '/api/x402/tip/%')
       .gte('created_at', since);
 
-    tipsAtomic = (tipPayments ?? []).reduce(
-      (sum, p) => sum + parseInt(p.amount_usdc as string, 10),
-      0
-    );
+    tipsAtomic = (tipPayments ?? []).reduce((sum, p) => {
+      const payer = p.payer as string | null;
+      if (creatorEoa && payer && payer.toLowerCase() === creatorEoa.toLowerCase()) return sum;
+      // amount_usdc is always an atomic-integer string (CLAUDE.md §4) — Number() over
+      // parseInt() so a malformed value (e.g. a stray decimal) fails loud as NaN-guarded 0
+      // instead of parseInt silently truncating it into a wrong integer.
+      const amt = Number(p.amount_usdc as string);
+      return sum + (Number.isFinite(amt) ? amt : 0);
+    }, 0);
   }
 
   // Upsert: one canonical row per (article_slug, window_start hour bucket).

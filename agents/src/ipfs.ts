@@ -5,28 +5,32 @@
 import { PINATA_JWT } from './config.js';
 
 /**
- * Pins a JSON object to IPFS via Pinata. Returns the CID, or null if PINATA_JWT is
+ * Pins a pre-serialized JSON string to IPFS via Pinata's pinFileToIPFS, so the exact
+ * bytes pinned are the exact bytes the caller hashed (e.g. keccak256 for the on-chain
+ * reasonHash commitment). pinJSONToIPFS would let Pinata re-serialize the object
+ * server-side, which is not guaranteed to byte-match a local JSON.stringify — breaking
+ * the on-chain commitment's verifiability. Returns the CID, or null if PINATA_JWT is
  * unset (graceful no-op — pricing must not block on a missing/unconfigured pinning
  * provider, same philosophy as Groq/payment mock mode).
  */
-export async function pinJsonToIpfs(json: unknown, name: string): Promise<string | null> {
+export async function pinJsonToIpfs(raw: string, name: string): Promise<string | null> {
   if (!PINATA_JWT) return null;
 
-  const res = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+  const form = new FormData();
+  form.append('file', new Blob([raw], { type: 'application/json' }), `${name}.json`);
+  form.append('pinataMetadata', JSON.stringify({ name }));
+
+  const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${PINATA_JWT}`,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      pinataContent: json,
-      pinataMetadata: { name },
-    }),
+    body: form,
   });
 
   if (!res.ok) {
     const txt = await res.text().catch(() => '');
-    throw new Error(`[ipfs] pinJSONToIPFS failed: ${res.status} ${txt.slice(0, 200)}`);
+    throw new Error(`[ipfs] pinFileToIPFS failed: ${res.status} ${txt.slice(0, 200)}`);
   }
 
   const data = await res.json() as { IpfsHash: string };

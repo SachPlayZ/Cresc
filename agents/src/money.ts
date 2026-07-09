@@ -9,10 +9,12 @@ export type UsdcAmount = {
 export function fromDisplay(amount: string | number, decimals: number): UsdcAmount {
   const raw = typeof amount === 'string' ? amount.replace(/^\$/, '').trim() : amount.toString();
   if (raw === '' || isNaN(Number(raw))) throw new Error(`[money] Invalid amount: "${amount}"`);
-  const [wholePart, fracPart = ''] = raw.split('.');
+  const negative = raw.startsWith('-');
+  const unsigned = negative ? raw.slice(1) : raw;
+  const [wholePart, fracPart = ''] = unsigned.split('.');
   const fracPadded = fracPart.padEnd(decimals, '0').slice(0, decimals);
-  const baseUnits = BigInt(wholePart) * 10n ** BigInt(decimals) + BigInt(fracPadded || '0');
-  return { value: baseUnits, decimals };
+  const magnitude = BigInt(wholePart || '0') * 10n ** BigInt(decimals) + BigInt(fracPadded || '0');
+  return { value: negative ? -magnitude : magnitude, decimals };
 }
 
 export function toDisplay(amount: UsdcAmount): string {

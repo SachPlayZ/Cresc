@@ -30,6 +30,7 @@ import {
   isPaymentMockMode,
 } from './config.js';
 import { hmacAuth } from './middleware/hmac.js';
+import { fromDisplay } from './money.js';
 import { evaluateAndPay, type ArticleInput } from './workers/reader-agent.js';
 import { startWatcher } from './workers/watcher.js';
 import { startAudit } from './workers/audit.js';
@@ -172,7 +173,7 @@ async function redeposit(): Promise<void> {
   try {
     const balances = await client.getBalances();
     const available = balances.gateway?.available ?? 0n;
-    const threshold = BigInt(Math.round(parseFloat(GATEWAY_REDEPOSIT_THRESHOLD_USDC) * 1_000_000));
+    const threshold = fromDisplay(GATEWAY_REDEPOSIT_THRESHOLD_USDC, 6).value;
 
     if (available < threshold) {
       console.log(`[gateway] balance low (${available} atomic), redepositing ${GATEWAY_REDEPOSIT_AMOUNT_USDC} USDC`);
@@ -211,6 +212,20 @@ let _shuttingDown = false;
 function trackInflight<T>(fn: () => Promise<T>): Promise<T> {
   _inFlightCount++;
   return fn().finally(() => { _inFlightCount--; });
+}
+
+// --- Pay-call serialization ---
+// GatewayClient.pay() signs with the single shared buyer EOA, which needs strictly
+// sequential nonces (CLAUDE.md: "Single writer for the buyer nonce"). Concurrent
+// evaluate-and-pay/tip requests would otherwise race — two calls building a tx with the
+// same nonce, and the idempotency read-then-pay in each request racing against the
+// other's not-yet-written payment_events row. Chaining every pay-call through this
+// queue serializes both problems away in one fix.
+let _payQueue: Promise<void> = Promise.resolve();
+function withPayLock<T>(fn: () => Promise<T>): Promise<T> {
+  const result = _payQueue.then(fn, fn);
+  _payQueue = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 // --- Routes ---
@@ -279,30 +294,34 @@ app.post('/agent/evaluate-and-pay', hmacAuth, async (req: Request, res: Response
     return;
   }
 
-  // Idempotency: check full triple (reader_id, content_contract, request_id).
-  // content_contract must be matched case-insensitively — viem returns checksummed
-  // (mixed-case) addresses but the DB unique index is on lower(content_contract).
-  const { data: existing } = await db
-    .from('payment_events')
-    .select('id')
-    .eq('reader_id', reader_id)
-    .ilike('content_contract', article.content_contract ?? '')
-    .eq('request_id', request_id)
-    .maybeSingle();
-
-  if (existing) {
-    res.json({
-      decision: 'paid',
-      gates: { budget: true, quality: 1, interest: 1, confidence: 100 },
-      payment: { tx: '0xalready-paid', amount_atomic: article.price_atomic, settled_at: new Date().toISOString() },
-      unlock_token: generateUnlockToken(article.creator_id, article.slug, reader_id),
-    });
-    return;
-  }
-
-  // Track in-flight for graceful shutdown drain
+  // Track in-flight for graceful shutdown drain. The idempotency check and the pay
+  // call are serialized together via withPayLock — otherwise two concurrent requests
+  // for the same (reader_id, content_contract, request_id) can both read "not found"
+  // before either has written payment_events, double-paying.
   const result = await trackInflight(() =>
-    evaluateAndPay(db, reader_id, request_id, article, getGatewayClient())
+    withPayLock(async () => {
+      // Idempotency: check full triple (reader_id, content_contract, request_id).
+      // content_contract must be matched case-insensitively — viem returns checksummed
+      // (mixed-case) addresses but the DB unique index is on lower(content_contract).
+      const { data: existing } = await db
+        .from('payment_events')
+        .select('id')
+        .eq('reader_id', reader_id)
+        .ilike('content_contract', article.content_contract ?? '')
+        .eq('request_id', request_id)
+        .maybeSingle();
+
+      if (existing) {
+        return {
+          decision: 'paid' as const,
+          gates: { budget: true, quality: 1, interest: 1, confidence: 100 },
+          payment: { tx: '0xalready-paid', amount_atomic: article.price_atomic, settled_at: new Date().toISOString() },
+          unlock_token: generateUnlockToken(article.creator_id, article.slug, reader_id),
+        };
+      }
+
+      return evaluateAndPay(db, reader_id, request_id, article, getGatewayClient());
+    })
   );
   res.status(result.decision === 'error' ? 502 : 200).json(result);
 });
@@ -416,11 +435,17 @@ app.post('/agent/ghost/webhook', async (req: Request, res: Response) => {
 
 // Tip endpoint (HMAC-protected) — budget gate only
 app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
-  const { reader_id, creator_id, content_contract, amount_atomic } = req.body as {
+  if (_shuttingDown) {
+    res.status(503).json({ decision: 'error', error: 'service shutting down' });
+    return;
+  }
+
+  const { reader_id, creator_id, content_contract, amount_atomic, request_id } = req.body as {
     reader_id?: string;
     creator_id?: string;
     content_contract?: string;
     amount_atomic?: string;
+    request_id?: string;
   };
 
   if (!reader_id || !creator_id || !content_contract || !amount_atomic) {
@@ -430,6 +455,20 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
   if (!/^[0-9]+$/.test(amount_atomic) || BigInt(amount_atomic) <= 0n) {
     res.status(400).json({ error: 'amount_atomic must be a positive atomic USDC integer' });
     return;
+  }
+
+  if (request_id) {
+    const { data: existing } = await db
+      .from('payment_events')
+      .select('id')
+      .eq('reader_id', reader_id)
+      .ilike('content_contract', content_contract)
+      .eq('request_id', request_id)
+      .maybeSingle();
+    if (existing) {
+      res.json({ decision: 'paid', payment: { tx: '0xalready-paid', amount_atomic, settled_at: new Date().toISOString() } });
+      return;
+    }
   }
 
   // Budget gate: both daily AND session caps (mirrors Gate 1 of evaluate-and-pay)
@@ -469,9 +508,11 @@ app.post('/agent/tip', hmacAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    // x402 payment — PAYMENT-SIGNATURE is attached by GatewayClient.pay(), not HMAC
+    // x402 payment — PAYMENT-SIGNATURE is attached by GatewayClient.pay(), not HMAC.
+    // Serialized via withPayLock + tracked in-flight: same shared-buyer-nonce and
+    // graceful-drain concerns as /agent/evaluate-and-pay.
     const tipUrl = `${APP_BASE_URL}/api/x402/tip/${encodeURIComponent(content_contract)}?amount=${encodeURIComponent(amount_atomic)}&r=${encodeURIComponent(reader_id)}&creator=${encodeURIComponent(creator_id)}`;
-    const payResult = await client.pay(tipUrl, { method: 'GET' });
+    const payResult = await trackInflight(() => withPayLock(() => client.pay(tipUrl, { method: 'GET' })));
 
     if (payResult.status !== 200 && payResult.status !== 201) {
       res.status(502).json({ decision: 'error', error: `tip payment returned status ${payResult.status}` });
@@ -504,7 +545,12 @@ app.post('/agent/gateway-mint', hmacAuth, async (req: Request, res: Response) =>
 });
 
 app.post('/agent/withdraw-content', hmacAuth, async (req: Request, res: Response) => {
-  const { creator_id, content_contract, destination_address, amount_atomic, nonce, v, r, s } = req.body as {
+  if (_shuttingDown) {
+    res.status(503).json({ error: 'service shutting down' });
+    return;
+  }
+
+  const { creator_id, content_contract, destination_address, amount_atomic, nonce, v, r, s, total_withdrawn_atomic, signed_at } = req.body as {
     creator_id?: string;
     content_contract?: string;
     destination_address?: string;
@@ -513,17 +559,28 @@ app.post('/agent/withdraw-content', hmacAuth, async (req: Request, res: Response
     v?: number;
     r?: string;
     s?: string;
+    total_withdrawn_atomic?: string;
+    signed_at?: number;
   };
   if (!creator_id || !content_contract || !destination_address || !amount_atomic || !nonce || v === undefined || !r || !s) {
     res.status(400).json({ error: 'creator_id, content_contract, destination_address, amount_atomic, nonce, v, r, s required' });
     return;
   }
-  if (!/^[0-9]+$/.test(amount_atomic)) {
+  if (!/^[0-9]+$/.test(amount_atomic) || BigInt(amount_atomic) <= 0n) {
     res.status(400).json({ error: 'amount_atomic must be a positive atomic USDC integer' });
     return;
   }
   if (!/^[0-9]+$/.test(nonce)) {
     res.status(400).json({ error: 'nonce must be a non-negative integer' });
+    return;
+  }
+  // A signature the creator signed a while ago and only now got relayed is suspicious —
+  // the vault's deployed bytecode doesn't invalidate it via a direct withdrawal in
+  // between, so cap how stale a relay request is allowed to be, in addition to the
+  // totalWithdrawnAtomic drift check right before submission below.
+  const WITHDRAW_SIGNATURE_TTL_MS = 2 * 60 * 1000;
+  if (signed_at !== undefined && Date.now() - signed_at > WITHDRAW_SIGNATURE_TTL_MS) {
+    res.status(409).json({ error: 'withdrawal signature is stale — ask creator to re-sign' });
     return;
   }
 
@@ -554,13 +611,14 @@ app.post('/agent/withdraw-content', hmacAuth, async (req: Request, res: Response
       return;
     }
 
-    const txHash = await withdrawFromContent(
+    const txHash = await trackInflight(() => withdrawFromContent(
       content_contract,
       destination_address,
       BigInt(amount_atomic),
       BigInt(nonce),
-      { v: Number(v), r: r as `0x${string}`, s: s as `0x${string}` }
-    );
+      { v: Number(v), r: r as `0x${string}`, s: s as `0x${string}` },
+      total_withdrawn_atomic !== undefined ? BigInt(total_withdrawn_atomic) : undefined
+    ));
     res.json({ txHash: txHash ?? '0xmock-content-withdraw' });
   } catch (err) {
     res.status(502).json({ error: String(err) });

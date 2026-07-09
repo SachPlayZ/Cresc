@@ -117,6 +117,7 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
     });
     const signReq = await signReqRes.json() as {
       challengeId?: string; nonce?: string; amount_atomic?: string; destination_address?: string;
+      total_withdrawn_atomic?: string; signed_at?: number;
       skipped?: boolean; error?: string;
     };
     if (signReq.skipped) return { skipped: true };
@@ -147,6 +148,8 @@ export function WithdrawSection({ creator, contentContracts }: WithdrawSectionPr
         amount_atomic: signReq.amount_atomic,
         nonce: signReq.nonce,
         signature,
+        total_withdrawn_atomic: signReq.total_withdrawn_atomic,
+        signed_at: signReq.signed_at,
       }),
     });
     const prep = await prepRes.json() as { txHash?: string; error?: string };

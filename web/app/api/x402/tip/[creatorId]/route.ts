@@ -74,6 +74,21 @@ export async function GET(
     );
   }
 
+  const contentContractLower = contentContract.toLowerCase();
+
+  if (requestId) {
+    const { data: existing } = await db
+      .from('payment_events')
+      .select('id')
+      .eq('reader_id', readerId)
+      .eq('content_contract', contentContractLower)
+      .eq('request_id', requestId)
+      .maybeSingle();
+    if (existing) {
+      return NextResponse.json({ ok: true, tip_settled: true });
+    }
+  }
+
   let signedPayload: Record<string, unknown>;
   try {
     signedPayload = JSON.parse(Buffer.from(sigHeader, 'base64').toString('utf8')) as Record<string, unknown>;
@@ -100,7 +115,7 @@ export async function GET(
     network: ARC_CAIP2,
     gateway_tx: result.txHash ?? null,
     pay_to: contentContract,
-    content_contract: contentContract,
+    content_contract: contentContractLower,
     reader_id: readerId,
     article_slug: null,
     request_id: requestId,

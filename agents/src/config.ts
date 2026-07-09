@@ -32,6 +32,17 @@ function parseNumber(key: string, fallback: number): number {
   return n;
 }
 
+// For atomic-unit env vars: must be a whole number, or BigInt(...) downstream throws.
+function parseIntegerAtomic(key: string, fallback: number): number {
+  const raw = getEnv(key);
+  if (!raw) return fallback;
+  const n = parseFloat(raw);
+  if (isNaN(n) || !Number.isInteger(n)) {
+    throw new Error(`[config] ${key} must be an integer (atomic units), got: "${raw}"`);
+  }
+  return n;
+}
+
 export const SUPABASE_URL: string = getEnv('SUPABASE_URL') ?? getEnv('NEXT_PUBLIC_SUPABASE_URL') ?? '';
 export const SUPABASE_SERVICE_ROLE_KEY: string = getEnv('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
@@ -69,8 +80,8 @@ export const INTEREST_MIN: number = parseNumber('INTEREST_MIN', 0.3);
 export const CONFIDENCE_MIN: number = parseNumber('CONFIDENCE_MIN', 30);
 
 // Watcher tuning
-export const PRICE_MIN_ATOMIC: number = parseNumber('PRICE_MIN_ATOMIC', 10_000);   // $0.01
-export const PRICE_MAX_ATOMIC: number = parseNumber('PRICE_MAX_ATOMIC', 1_000_000); // $1.00
+export const PRICE_MIN_ATOMIC: number = parseIntegerAtomic('PRICE_MIN_ATOMIC', 10_000);   // $0.01
+export const PRICE_MAX_ATOMIC: number = parseIntegerAtomic('PRICE_MAX_ATOMIC', 1_000_000); // $1.00
 export const W_VIEWS: number = parseNumber('W_VIEWS', 0.4);
 export const W_DWELL: number = parseNumber('W_DWELL', 0.4);
 export const W_TIPS: number  = parseNumber('W_TIPS',  0.2);

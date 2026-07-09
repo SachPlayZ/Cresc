@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   let withdrawalId: string | null = null;
   const db = createServerClient();
   try {
-    const { creator_id, userToken, content_contract, amount_atomic, nonce, signature } =
+    const { creator_id, userToken, content_contract, amount_atomic, nonce, signature, total_withdrawn_atomic, signed_at } =
       await req.json() as {
         creator_id?: string;
         userToken?: string;
@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
         amount_atomic?: string;
         nonce?: string;
         signature?: string;
+        total_withdrawn_atomic?: string;
+        signed_at?: number;
       };
 
     if (!creator_id || !userToken || !content_contract || !amount_atomic || !nonce || !signature) {
@@ -90,6 +92,8 @@ export async function POST(req: NextRequest) {
       r,
       s,
       withdrawal_id: withdrawalId,
+      total_withdrawn_atomic,
+      signed_at,
     });
     const agentRes = await fetch(`${EC2_AGENT_BASE}/agent/withdraw-content`, {
       method: 'POST',

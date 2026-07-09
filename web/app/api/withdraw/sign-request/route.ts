@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '../../../../lib/db';
 import { assertCreatorOwnership } from '../../../../lib/auth/creator';
 import { requestTypedDataSignature } from '../../../../lib/circle/ucw';
-import { readVaultWithdrawNonce, readVaultBalance } from '../../../../lib/circle';
+import { readVaultWithdrawNonce, readVaultBalance, readVaultTotalWithdrawn } from '../../../../lib/circle';
 import { ARC_CHAIN_ID } from '../../../../lib/config';
 
 export async function POST(req: NextRequest) {
@@ -59,6 +59,10 @@ export async function POST(req: NextRequest) {
     const destinationAddress = creator.eoa_address;
     const amountAtomic = balance.toString();
     const nonce = await readVaultWithdrawNonce(content_contract);
+    // Snapshot cumulative withdrawals now — /prepare re-checks this hasn't moved before
+    // relaying, so a stale signature can't be replayed after an intervening withdrawal
+    // (ContentVault's deployed withdrawNonce alone doesn't catch that case).
+    const totalWithdrawnAtSign = (await readVaultTotalWithdrawn(content_contract)).toString();
     const typedData = {
       types: {
         EIP712Domain: [
@@ -94,6 +98,8 @@ export async function POST(req: NextRequest) {
       nonce: nonce.toString(),
       amount_atomic: amountAtomic,
       destination_address: destinationAddress,
+      total_withdrawn_atomic: totalWithdrawnAtSign,
+      signed_at: Date.now(),
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

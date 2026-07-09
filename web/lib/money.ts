@@ -33,14 +33,16 @@ export function fromDisplay(amount: string | number, decimals: number): UsdcAmou
   }
 
   // Split on decimal point to avoid float imprecision
-  const [wholePart, fracPart = ""] = raw.split(".");
+  const negative = raw.startsWith("-");
+  const unsigned = negative ? raw.slice(1) : raw;
+  const [wholePart, fracPart = ""] = unsigned.split(".");
 
   // Pad or truncate fractional part to `decimals` digits
   const fracPadded = fracPart.padEnd(decimals, "0").slice(0, decimals);
 
-  const baseUnits = BigInt(wholePart) * 10n ** BigInt(decimals) + BigInt(fracPadded || "0");
+  const magnitude = BigInt(wholePart || "0") * 10n ** BigInt(decimals) + BigInt(fracPadded || "0");
 
-  return { value: baseUnits, decimals };
+  return { value: negative ? -magnitude : magnitude, decimals };
 }
 
 /**

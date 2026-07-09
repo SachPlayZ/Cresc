@@ -39,6 +39,7 @@ type AuditedRow = {
 };
 
 type ArticleRow = {
+  id: string;
   slug: string;
   title: string | null;
   content_contract: string | null;
@@ -220,14 +221,17 @@ async function repriceArticle(
     llm_move_pct: movePct,
     llm_reason: llmReason,
   };
-  const reasonHash = keccak256(toHex(JSON.stringify(reason)));
+  // Serialize once — hash and pin must operate on identical bytes, or the on-chain
+  // reasonHash commitment can't be verified against the pinned IPFS content.
+  const reasonRaw = JSON.stringify(reason);
+  const reasonHash = keccak256(toHex(reasonRaw));
 
   // Pin reasoning to IPFS BEFORE tuning on-chain — the on-chain PriceTuned event's
   // reasonHash is a commitment to this exact content, so the pin must exist first for
   // the two to be verifiable together. Non-fatal: a pinning outage must not block pricing.
   let reasonCid: string | null = null;
   try {
-    reasonCid = await pinJsonToIpfs(reason, `cresc-price-reason-${article.slug}-${Date.now()}`);
+    reasonCid = await pinJsonToIpfs(reasonRaw, `cresc-price-reason-${article.slug}-${Date.now()}`);
   } catch (err) {
     console.error(`[pricing] IPFS pin failed for ${article.slug} (continuing without CID):`, err);
   }
@@ -243,10 +247,12 @@ async function repriceArticle(
     }
   }
 
+  // Scoped by id (globally unique) — slug is only unique per-creator, so two creators
+  // with the same slug would otherwise both get repriced by an `.eq('slug', ...)` match.
   await db
     .from('articles')
     .update({ current_price_atomic: newPrice, updated_at: new Date().toISOString() })
-    .eq('slug', article.slug);
+    .eq('id', article.id);
 
   await db.from('price_history').insert({
     article_slug: article.slug,
@@ -270,7 +276,7 @@ export async function runWatcher(db: SupabaseClient): Promise<void> {
 
   const { data: articles, error } = await db
     .from('articles')
-    .select('slug, title, content_contract, base_price_atomic, current_price_atomic')
+    .select('id, slug, title, content_contract, base_price_atomic, current_price_atomic')
     .eq('active', true);
 
   if (error || !articles || articles.length === 0) {

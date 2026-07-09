@@ -44,6 +44,9 @@ export async function GET(
   if (!contentContract) {
     return NextResponse.json({ error: 'content contract not deployed' }, { status: 503 });
   }
+  if (article.monetization_enabled === false) {
+    return NextResponse.json({ error: 'article is not monetized' }, { status: 409 });
+  }
 
   const priceAtomic = await readContentPriceAtomic(contentContract, String(article.current_price_atomic));
   const price = { value: BigInt(priceAtomic), decimals: 6 };
@@ -78,18 +81,22 @@ export async function GET(
     );
   }
 
-  if (requestId) {
-    const { data: existing } = await db
-      .from('payment_events')
-      .select('id')
-      .eq('reader_id', readerId)
-      .eq('content_contract', contentContract)
-      .eq('request_id', requestId)
-      .maybeSingle();
-    if (existing) {
-      const unlockToken = generateUnlockToken(site, slug, readerId);
-      return NextResponse.json({ unlock_token: unlockToken, slug });
-    }
+  if (!requestId) {
+    return NextResponse.json({ error: 'rid query param required' }, { status: 400 });
+  }
+
+  const contentContractLower = contentContract.toLowerCase();
+
+  const { data: existing } = await db
+    .from('payment_events')
+    .select('id')
+    .eq('reader_id', readerId)
+    .eq('content_contract', contentContractLower)
+    .eq('request_id', requestId)
+    .maybeSingle();
+  if (existing) {
+    const unlockToken = generateUnlockToken(site, slug, readerId);
+    return NextResponse.json({ unlock_token: unlockToken, slug });
   }
 
   // Payment signature present — settle.
@@ -122,7 +129,7 @@ export async function GET(
     network: ARC_CAIP2,
     gateway_tx: result.txHash ?? null,
     pay_to: contentContract,
-    content_contract: contentContract,
+    content_contract: contentContractLower,
     reader_id: readerId,
     article_slug: slug,
     request_id: requestId,

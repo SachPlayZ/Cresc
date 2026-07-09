@@ -67,12 +67,15 @@
           '<a id="cresc-unlock-btn" href="' + unlockHref + '" ' +
           'style="display:inline-block;background:#0f172a;color:#fff;padding:0.7rem 2rem;' +
           'border-radius:8px;text-decoration:none;font-weight:600;font-family:sans-serif;' +
-          'font-size:0.95rem;transition:opacity 0.15s;">' +
-          'Unlock for ' + data.priceDisplay + ' →' +
-          '</a>' +
+          'font-size:0.95rem;transition:opacity 0.15s;"></a>' +
           '<p style="font-size:0.75rem;color:#aaa;margin:0.5rem 0 0;font-family:sans-serif;">' +
           'EIP-3009 signed offchain · zero gas · sub-second settlement' +
           '</p>';
+
+        // Set via textContent, not string concatenation into innerHTML — priceDisplay
+        // comes from the API response and must never be interpreted as markup.
+        var unlockBtn = overlay.querySelector('#cresc-unlock-btn');
+        if (unlockBtn) unlockBtn.textContent = 'Unlock for ' + data.priceDisplay + ' →';
 
         content.appendChild(overlay);
         uncloak(); // the element's own inline clip now owns it — drop the generic rule

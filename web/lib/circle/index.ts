@@ -108,6 +108,13 @@ const CONTENT_VAULT_ABI = [
     inputs: [],
     outputs: [{ type: "uint256" }],
   },
+  {
+    name: "totalWithdrawnAtomic",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
 ] as const;
 
 const ERC20_BALANCE_ABI = [
@@ -268,6 +275,20 @@ export async function readVaultWithdrawNonce(contentContract: string): Promise<b
     address: contentContract as `0x${string}`,
     abi: CONTENT_VAULT_ABI,
     functionName: "withdrawNonce",
+  });
+}
+
+/** Cumulative atomic USDC ever withdrawn from a vault (direct + relayed). Snapshotting
+ * this at sign-time and re-checking it at relay-time detects "a withdrawal happened in
+ * between" even in cases the vault's own withdrawNonce wouldn't catch (ContentVault's
+ * deployed bytecode doesn't bump withdrawNonce on a direct withdraw) — see /api/withdraw
+ * /sign-request and /prepare. */
+export async function readVaultTotalWithdrawn(contentContract: string): Promise<bigint> {
+  if (isMockCircle || !ARC_RPC_URL) return 0n;
+  return makePublicClient().readContract({
+    address: contentContract as `0x${string}`,
+    abi: CONTENT_VAULT_ABI,
+    functionName: "totalWithdrawnAtomic",
   });
 }
 

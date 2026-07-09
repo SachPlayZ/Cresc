@@ -58,6 +58,9 @@ export async function POST(
   if (!contentContract) {
     return NextResponse.json({ error: 'content contract not deployed' }, { status: 503 });
   }
+  if (article.monetization_enabled === false) {
+    return NextResponse.json({ error: 'article is not monetized' }, { status: 409 });
+  }
 
   // Request ID for idempotency (CLAUDE.md invariant §9)
   const requestId = body.request_id ?? crypto.randomUUID();

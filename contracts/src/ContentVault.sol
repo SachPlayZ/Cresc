@@ -49,6 +49,7 @@ contract ContentVault {
     error ContentVault__InvalidPrice();
     error ContentVault__TransferFailed();
     error ContentVault__InsufficientBalance();
+    error ContentVault__InvalidAmount();
     error ContentVault__InvalidNonce();
     error ContentVault__InvalidSignature();
     error ContentVault__Reentrant();
@@ -120,10 +121,16 @@ contract ContentVault {
     function withdraw(address to, uint256 amountAtomic) external nonReentrant {
         if (msg.sender != creator) revert ContentVault__Unauthorized();
         if (to == address(0)) revert ContentVault__ZeroAddress();
-        if (amountAtomic == 0) revert ContentVault__InsufficientBalance();
+        if (amountAtomic == 0) revert ContentVault__InvalidAmount();
 
         uint256 balance = IERC20(USDC).balanceOf(address(this));
         if (amountAtomic > balance) revert ContentVault__InsufficientBalance();
+
+        // Bump the signed-withdrawal nonce on every direct withdrawal too, not just
+        // withdrawSigned. Otherwise a Withdraw(to, amount, nonce) signature the creator
+        // handed to the relayer stays valid forever regardless of direct withdrawals the
+        // creator makes in between — there'd be no way to invalidate a stale signature.
+        withdrawNonce++;
 
         totalWithdrawnAtomic += amountAtomic;
         _safeTransfer(to, amountAtomic);
@@ -136,6 +143,8 @@ contract ContentVault {
 
         uint256 balance = IERC20(USDC).balanceOf(address(this));
         if (balance == 0) return;
+
+        withdrawNonce++;
 
         totalWithdrawnAtomic += balance;
         _safeTransfer(to, balance);
@@ -154,7 +163,7 @@ contract ContentVault {
     {
         if (msg.sender != payoutOperator) revert ContentVault__Unauthorized();
         if (to == address(0)) revert ContentVault__ZeroAddress();
-        if (amountAtomic == 0) revert ContentVault__InsufficientBalance();
+        if (amountAtomic == 0) revert ContentVault__InvalidAmount();
         if (nonce != withdrawNonce) revert ContentVault__InvalidNonce();
         if (uint256(s) > MAX_S || (v != 27 && v != 28)) revert ContentVault__InvalidSignature();
 
@@ -164,10 +173,11 @@ contract ContentVault {
         if (signer == address(0)) revert ContentVault__InvalidSignature();
         if (signer != creator) revert ContentVault__Unauthorized();
 
-        withdrawNonce = nonce + 1;
-
+        // Check balance before the nonce effect — all checks must precede all effects.
         uint256 balance = IERC20(USDC).balanceOf(address(this));
         if (amountAtomic > balance) revert ContentVault__InsufficientBalance();
+
+        withdrawNonce = nonce + 1;
 
         totalWithdrawnAtomic += amountAtomic;
         _safeTransfer(to, amountAtomic);
