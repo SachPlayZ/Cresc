@@ -109,6 +109,36 @@ export async function setArticleMonetization(
   if (error) throw error;
 }
 
+/** One row from the search_articles RPC (see 20260802120000_article_search.sql). */
+export type ArticleSearchRow = {
+  slug: string;
+  creator_id: string;
+  creator_name: string;
+  title: string;
+  excerpt: string;
+  topics: string[];
+  current_price_atomic: string | number;
+  rank: number;
+};
+
+/**
+ * searchArticles — ranked full-text search over live, contract-backed articles.
+ * Blank query = browse mode (most recently updated first).
+ * Service-role client only: the RPC joins `creators`, which has no anon grant.
+ */
+export async function searchArticles(
+  db: SupabaseClient,
+  input: { query?: string; limit?: number; offset?: number }
+): Promise<ArticleSearchRow[]> {
+  const { data, error } = await db.rpc('search_articles', {
+    p_query: input.query ?? '',
+    p_limit: input.limit ?? 10,
+    p_offset: input.offset ?? 0,
+  });
+  if (error) throw error;
+  return (data ?? []) as ArticleSearchRow[];
+}
+
 export async function listActiveArticles(db: SupabaseClient): Promise<Article[]> {
   const { data, error } = await db
     .from('articles')
