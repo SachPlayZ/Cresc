@@ -29,3 +29,6 @@ agents/supabase/.temp
 .DS_Store
 .vscode/
 .idea/
+
+# Vercel CLI link state
+.vercel
