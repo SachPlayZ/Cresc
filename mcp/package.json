@@ -1,0 +1,40 @@
+{
+  "name": "cresc-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for discovering pay-per-article writing from Cresc creators. Search by topic, get a link to pay and read.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "cresc-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "cresc",
+    "ghost",
+    "usdc",
+    "x402"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.20.0",
+    "typescript": "^5"
+  }
+}
